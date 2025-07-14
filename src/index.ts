@@ -173,6 +173,7 @@ export class DoggyHoleServer extends EventEmitter {
     const clientData = this.connectedClients.get(ws);
     if (clientData) {
       this.event.handleIncomingEvent(clientData.name, message.eventName, message.data);
+      this.emit('event', message.eventName, message.data, clientData.name);
     }
   }
 
@@ -196,6 +197,62 @@ export class DoggyHoleServer extends EventEmitter {
 
   getConnectedClientNames(): string[] {
     return Array.from(this.connectedClients.values()).map(client => client.name);
+  }
+
+  onEvent(eventName: string, handler: (...args: any[]) => void): DoggyHoleServer {
+    this.event.on(eventName, handler);
+    return this;
+  }
+
+  onceEvent(eventName: string, handler: (...args: any[]) => void): DoggyHoleServer {
+    this.event.once(eventName, handler);
+    return this;
+  }
+
+  offEvent(eventName: string, handler?: (...args: any[]) => void): DoggyHoleServer {
+    if (handler) {
+      this.event.off(eventName, handler);
+    } else {
+      this.event.off(eventName);
+    }
+    return this;
+  }
+
+  emitEvent(eventName: string, data?: any): boolean {
+    return this.event.emit(eventName, data);
+  }
+
+  broadcastEvent(eventName: string, data?: any): void {
+    this.event.broadcast(eventName, data);
+  }
+
+  hasEventListeners(eventName: string): boolean {
+    return this.event.hasListeners(eventName);
+  }
+
+  getEventListenerCount(eventName: string): number {
+    return this.event.getListenerCount(eventName);
+  }
+
+  getEventNames(): string[] {
+    return this.event.getEventNames();
+  }
+
+  setMaxEventListeners(max: number): DoggyHoleServer {
+    this.event.setMaxListeners(max);
+    return this;
+  }
+
+  getMaxEventListeners(): number {
+    return this.event.getMaxListeners();
+  }
+
+  clearAllEvents(): void {
+    this.event.clearAll();
+  }
+
+  clearEvent(eventName: string): void {
+    this.event.clearEvent(eventName);
   }
 
   private sendResponse(ws: WebSocket, id: string, success: boolean, data?: any, error?: string): void {
