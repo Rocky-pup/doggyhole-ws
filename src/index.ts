@@ -494,7 +494,7 @@ export class FoxHoleClient extends EventEmitter {
       this.heartbeatInterval = null;
     }
     
-    for (const [id, request] of this.pendingRequests) {
+    for (const [_, request] of this.pendingRequests) {
       request.reject(new Error('Connection closed'));
     }
     this.pendingRequests.clear();

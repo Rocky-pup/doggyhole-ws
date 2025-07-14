@@ -74,7 +74,7 @@ export class FoxHoleServerEventManager {
       data: { ...data, fromClient }
     };
     const connectedClients = this.server.getConnectedClients();
-    for (const [ws, clientData] of connectedClients) {
+    for (const [ws, _] of connectedClients) {
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify(eventMessage));
       }
