@@ -12,7 +12,12 @@ A floofy, feature-rich WebSocket library for Node.js that makes real-time commun
 - 🔄 **Auto-Reconnection**: Clients automatically reconnect with exponential backoff
 - 💓 **Heartbeat System**: Keep connections alive and detect timeouts
 - 🛡️ **Token Authentication**: Secure your den with token-based auth
-- 🎯 **EventEmitter-like Events**: Server-side event processing with full EventEmitter compatibility
+- 🎯 **Dual Event System**: `server.event.on()` for client events, `server.on()` for server lifecycle events
+- 🔗 **Connection State Management**: Track and respond to connection state changes
+- ⚡ **Structured Logging**: Configurable log levels with contextual information
+- 🛑 **Graceful Shutdown**: Properly close connections with notification
+- 🔧 **Full TypeScript Support**: Complete type definitions for IDE assistance
+- 🚨 **Enhanced Error Handling**: Specific error types with detailed information
 
 ## 🚀 Installation
 
@@ -77,8 +82,12 @@ console.log(response);
 ```typescript
 interface ServerOptions {
   port: number;
-  heartbeatInterval?: number;    // Default: 1000ms
-  heartbeatTimeout?: number;     // Default: 3000ms
+  heartbeatInterval?: number;     // Default: 1000ms
+  heartbeatTimeout?: number;      // Default: 3000ms
+  maxConnections?: number;        // Default: 1000
+  logLevel?: LogLevel;            // Default: 'info'
+  gracefulShutdownTimeout?: number; // Default: 5000ms
+  messageQueueSize?: number;      // Default: 100
 }
 ```
 
@@ -163,142 +172,50 @@ console.log('Connected clients:', names);
 // Output: ['alice', 'bob', 'charlie']
 ```
 
+##### `getLogger(): Logger`
+Get the server logger instance.
+
+```typescript
+const logger = server.getLogger();
+logger.info('Custom log message');
+logger.setLevel(LogLevel.DEBUG);
+```
+
+##### `isServerShuttingDown(): boolean`
+Check if server is in shutdown process.
+
+```typescript
+if (server.isServerShuttingDown()) {
+  console.log('Server is shutting down');
+}
+```
+
+##### `async gracefulShutdown(reason?: string): Promise<void>`
+Gracefully shutdown the server with client notification.
+
+```typescript
+await server.gracefulShutdown('Maintenance required');
+```
+
 ##### `close(): void`
-Close the server and all connections.
+Immediately close the server and all connections.
 
 ```typescript
 server.close();
 ```
 
-#### Server Event Methods (NEW!)
 
-##### `onEvent(eventName: string, handler: (...args: any[]) => void): DoggyHoleServer`
-Listen for server-side events.
+#### Server Event Management
 
-```typescript
-server.onEvent('userMessage', (data) => {
-  console.log(`User ${data.fromClient} said: ${data.message}`);
-  // Log to database, moderate content, etc.
-});
+DoggyHole Server uses two different event systems:
 
-server.onEvent('gameStart', (data) => {
-  console.log(`Game started by ${data.fromClient}`);
-  // Initialize game state, notify other systems
-});
-```
+1. **`server.event.on()` - For client events**: Use this for events sent by clients via `client.event.send()`. These events are broadcast between clients and can be handled server-side.
 
-##### `onceEvent(eventName: string, handler: (...args: any[]) => void): DoggyHoleServer`
-Listen for a server-side event only once.
+2. **`server.on()` - For server lifecycle events**: Use this for server-specific events like connections, disconnections, and timeouts.
 
-```typescript
-server.onceEvent('firstConnection', (data) => {
-  console.log('First user connected!');
-  // Send welcome message, initialize systems
-});
-```
+#### Server Lifecycle Events (use `server.on()`)
 
-##### `offEvent(eventName: string, handler?: (...args: any[]) => void): DoggyHoleServer`
-Remove event listener(s).
-
-```typescript
-const messageHandler = (data) => console.log(data);
-server.onEvent('message', messageHandler);
-
-// Remove specific handler
-server.offEvent('message', messageHandler);
-
-// Remove all handlers for event
-server.offEvent('message');
-```
-
-##### `emitEvent(eventName: string, data?: any): boolean`
-Emit an event for server-side processing (does not broadcast to clients).
-
-```typescript
-// Trigger server-side event processing
-const hasListeners = server.emitEvent('systemAlert', { 
-  level: 'warning',
-  message: 'High CPU usage detected'
-});
-
-if (hasListeners) {
-  console.log('Alert was processed by listeners');
-}
-```
-
-##### `broadcastEvent(eventName: string, data?: any): void`
-Broadcast an event to all connected clients.
-
-```typescript
-server.broadcastEvent('announcement', {
-  message: 'Server maintenance in 5 minutes',
-  timestamp: Date.now()
-});
-
-server.broadcastEvent('userJoined', {
-  username: 'alice',
-  timestamp: Date.now()
-});
-```
-
-##### `hasEventListeners(eventName: string): boolean`
-Check if there are listeners for a specific event.
-
-```typescript
-if (server.hasEventListeners('userMessage')) {
-  console.log('Message handlers are registered');
-}
-```
-
-##### `getEventListenerCount(eventName: string): number`
-Get the number of listeners for a specific event.
-
-```typescript
-const count = server.getEventListenerCount('userMessage');
-console.log(`${count} handlers listening for userMessage`);
-```
-
-##### `getEventNames(): string[]`
-Get all event names that have listeners.
-
-```typescript
-const events = server.getEventNames();
-console.log('Events with listeners:', events);
-// Output: ['userMessage', 'gameStart', 'systemAlert']
-```
-
-##### `setMaxEventListeners(max: number): DoggyHoleServer`
-Set maximum number of listeners per event.
-
-```typescript
-server.setMaxEventListeners(20);
-```
-
-##### `getMaxEventListeners(): number`
-Get maximum number of listeners per event.
-
-```typescript
-const max = server.getMaxEventListeners();
-console.log(`Max listeners per event: ${max}`);
-```
-
-##### `clearAllEvents(): void`
-Remove all event listeners.
-
-```typescript
-server.clearAllEvents();
-```
-
-##### `clearEvent(eventName: string): void`
-Remove all listeners for a specific event.
-
-```typescript
-server.clearEvent('userMessage');
-```
-
-#### Server EventEmitter Events
-
-The server extends EventEmitter and emits these events:
+The server extends EventEmitter and emits these lifecycle events:
 
 ##### `'clientConnected'`
 Emitted when a client connects.
@@ -330,15 +247,6 @@ server.on('clientTimeout', (clientName: string) => {
 });
 ```
 
-##### `'event'`
-Emitted when any client sends an event.
-
-```typescript
-server.on('event', (eventName: string, data: any, fromClient: string) => {
-  console.log(`Event ${eventName} from ${fromClient}:`, data);
-  // Log all events for monitoring
-});
-```
 
 ### DoggyHoleClient
 
@@ -352,6 +260,8 @@ interface ClientOptions {
   maxReconnectAttempts?: number;  // Default: 5
   heartbeatInterval?: number;     // Default: 1000ms
   requestTimeout?: number;        // Default: 10000ms
+  logLevel?: LogLevel;            // Default: 'info'
+  reconnectBackoffMultiplier?: number; // Default: 1.5
 }
 ```
 
@@ -422,6 +332,31 @@ if (client.isConnected()) {
   console.log('Client is connected');
   // Make requests or send events
 }
+```
+
+##### `getConnectionState(): ConnectionState`
+Get the current connection state.
+
+```typescript
+const state = client.getConnectionState();
+console.log('Connection state:', state); // 'connected', 'connecting', 'disconnected', etc.
+```
+
+##### `onStateChange(handler: ConnectionStateHandler): DoggyHoleClient`
+Listen for connection state changes.
+
+```typescript
+client.onStateChange((newState, oldState) => {
+  console.log(`Connection state: ${oldState} -> ${newState}`);
+});
+```
+
+##### `getLogger(): Logger`
+Get the client logger instance.
+
+```typescript
+const logger = client.getLogger();
+logger.debug('Debug message');
 ```
 
 #### Request Methods
@@ -508,6 +443,16 @@ client.sendEvent('gameMove', {
 
 #### Client EventEmitter Events
 
+##### `'connected'`
+Emitted when successfully connected to server.
+
+```typescript
+client.on('connected', () => {
+  console.log('Connected to server!');
+  // Initialize UI, start sending data, etc.
+});
+```
+
 ##### `'disconnected'`
 Emitted when disconnected from server.
 
@@ -522,9 +467,31 @@ client.on('disconnected', (code: number, reason: string) => {
 Emitted when an error occurs.
 
 ```typescript
-client.on('error', (error: Error) => {
-  console.error('Client error:', error);
+client.on('error', (error: DoggyHoleError) => {
+  console.error('Client error:', error.message);
+  console.error('Error code:', error.code);
   // Handle connection errors, authentication failures
+});
+```
+
+##### `'stateChange'`
+Emitted when connection state changes.
+
+```typescript
+client.on('stateChange', (newState: ConnectionState, oldState: ConnectionState) => {
+  console.log(`Connection state changed: ${oldState} -> ${newState}`);
+  // Update UI based on connection state
+});
+```
+
+##### `'serverShutdown'`
+Emitted when server notifies of shutdown.
+
+```typescript
+client.on('serverShutdown', (reason: string, gracePeriod: number) => {
+  console.log(`Server shutting down: ${reason}`);
+  console.log(`Grace period: ${gracePeriod}ms`);
+  // Save work, notify user
 });
 ```
 
@@ -729,7 +696,33 @@ client.event.onceInternal('eventReceived', (eventName, data) => {
 
 ### Server Event Manager
 
-Access the server event manager via `server.event`. Has the same API as client event manager but with server-specific functionality.
+Access the server event manager via `server.event` to handle client events. Use this for events sent by clients via `client.event.send()`.
+
+#### Client Event Handling (use `server.event.on()`)
+
+Handle events sent by clients using `server.event.on()`:
+
+```typescript
+// Listen for chat messages from any client
+server.event.on('chatMessage', (data) => {
+  console.log(`[${data.fromClient}]: ${data.message}`);
+  // Process message, store in database, moderate content, etc.
+});
+
+// Listen for game moves
+server.event.on('gameMove', (data) => {
+  console.log(`Player ${data.fromClient} moved ${data.move}`);
+  // Validate move, update game state
+});
+
+// Listen for user status updates
+server.event.on('statusChange', (data) => {
+  console.log(`${data.fromClient} is now ${data.status}`);
+  // Update user database, notify other systems
+});
+```
+
+The server event manager has the same API as client event manager but with server-specific functionality.
 
 #### All Client Event Manager Methods Plus:
 
@@ -769,13 +762,13 @@ server.setUser('alice', 'alice-token');
 server.setUser('bob', 'bob-token');
 
 // Handle chat messages on server-side
-server.onEvent('chatMessage', (data) => {
+server.event.on('chatMessage', (data) => {
   console.log(`[${data.fromClient}]: ${data.message}`);
   // Log to database, moderate content, etc.
 });
 
 // Handle user status changes
-server.onEvent('statusChange', (data) => {
+server.event.on('statusChange', (data) => {
   console.log(`${data.fromClient} is now ${data.status}`);
   // Update user database, notify other systems
 });
@@ -816,12 +809,12 @@ gameServer.setUser('player1', 'p1-token');
 gameServer.setUser('player2', 'p2-token');
 
 // Handle game events on server
-gameServer.onEvent('gameMove', (data) => {
+gameServer.event.on('gameMove', (data) => {
   console.log(`Player ${data.fromClient} moved ${data.move}`);
   // Validate move, update game state
 });
 
-gameServer.onEvent('gameStart', (data) => {
+gameServer.event.on('gameStart', (data) => {
   console.log('Game started!');
   // Initialize game state
 });
@@ -883,12 +876,12 @@ gateway.setUser('user-service', 'user-token');
 gateway.setUser('order-service', 'order-token');
 
 // Handle service events
-gateway.onEvent('userRegistered', (data) => {
+gateway.event.on('userRegistered', (data) => {
   console.log(`New user registered: ${data.userId}`);
   // Notify other services, update metrics
 });
 
-gateway.onEvent('orderCreated', (data) => {
+gateway.event.on('orderCreated', (data) => {
   console.log(`Order created: ${data.orderId}`);
   // Process order, send notifications
 });
@@ -964,11 +957,11 @@ monitor.setUser('mobile-app', 'mobile-token');
 monitor.setUser('system-monitor', 'system-token');
 
 // Track system metrics
-monitor.onEvent('cpuUsage', (data) => {
+monitor.event.on('cpuUsage', (data) => {
   console.log(`CPU: ${data.percentage}% from ${data.fromClient}`);
   if (data.percentage > 90) {
     // Send alert
-    monitor.broadcastEvent('alert', {
+    monitor.event.broadcast('alert', {
       type: 'high-cpu',
       message: 'High CPU usage detected',
       value: data.percentage
@@ -976,7 +969,7 @@ monitor.onEvent('cpuUsage', (data) => {
   }
 });
 
-monitor.onEvent('memoryUsage', (data) => {
+monitor.event.on('memoryUsage', (data) => {
   console.log(`Memory: ${data.used}MB/${data.total}MB`);
 });
 
@@ -1026,7 +1019,97 @@ dashboard.event.on('alert', (data) => {
 });
 ```
 
-## 🔧 Error Handling
+## 🔧 Error Handling & TypeScript Support
+
+### Error Types
+
+DoggyHole provides specific error types for better error handling:
+
+```typescript
+import { 
+  DoggyHoleError,
+  AuthenticationError,
+  ConnectionError,
+  TimeoutError,
+  HandlerNotFoundError,
+  ClientNotFoundError,
+  NetworkError
+} from 'doggyhole-ws';
+
+// All errors extend DoggyHoleError with additional context
+try {
+  await client.request('nonexistent', {});
+} catch (error) {
+  if (error instanceof HandlerNotFoundError) {
+    console.log('Handler not found:', error.message);
+    console.log('Function name:', error.details?.functionName);
+  } else if (error instanceof TimeoutError) {
+    console.log('Request timed out after:', error.details?.timeout, 'ms');
+  }
+}
+```
+
+### TypeScript Support
+
+Full generic type support for requests and events:
+
+```typescript
+interface UserData {
+  id: number;
+  name: string;
+}
+
+interface UserResponse {
+  user: UserData;
+  status: string;
+}
+
+// Typed request handlers
+server.addHandler<{ userId: number }, UserResponse>('getUser', async (data) => {
+  // data is typed as { userId: number }
+  return {
+    user: { id: data.userId, name: 'John' },
+    status: 'active'
+  }; // Return type is validated as UserResponse
+});
+
+// Typed client requests
+const response = await client.request<{ userId: number }, UserResponse>('getUser', { userId: 123 });
+// response is typed as UserResponse
+
+// Typed events
+client.event.on('userUpdate', (data: UserData) => {
+  // data is typed as UserData
+  console.log('User updated:', data.name);
+});
+
+client.sendEvent<UserData>('userUpdate', { id: 1, name: 'Jane' });
+```
+
+### Connection State Management
+
+```typescript
+import { ConnectionState } from 'doggyhole-ws';
+
+client.onStateChange((newState, oldState) => {
+  switch (newState) {
+    case ConnectionState.CONNECTING:
+      showConnectingSpinner();
+      break;
+    case ConnectionState.CONNECTED:
+      hideSpinner();
+      enableFeatures();
+      break;
+    case ConnectionState.RECONNECTING:
+      showReconnectingMessage();
+      break;
+    case ConnectionState.DISCONNECTED:
+      disableFeatures();
+      break;
+  }
+});
+```
+
 
 ### Comprehensive Error Handling
 
@@ -1073,6 +1156,7 @@ client.event.onInternal('handlerError', (eventName, error, handler) => {
 });
 ```
 
+
 ## 🏗️ Architecture
 
 DoggyHole uses a hub-and-spoke model where:
@@ -1092,12 +1176,11 @@ DoggyHole uses a hub-and-spoke model where:
 // Server optimized for high throughput
 const server = DoggyHoleServer.create({
   port: 8080,
-  heartbeatInterval: 30000,  // 30 seconds
-  heartbeatTimeout: 60000    // 1 minute
+  heartbeatInterval: 30000,     // 30 seconds
+  heartbeatTimeout: 60000,      // 1 minute
+  maxConnections: 10000,        // High connection limit
+  logLevel: LogLevel.WARN       // Reduce logging overhead
 });
-
-// Increase event listeners limit
-server.setMaxEventListeners(100);
 
 // Client optimized for reliability
 const client = DoggyHoleClient.create({
@@ -1106,13 +1189,15 @@ const client = DoggyHoleClient.create({
   token: 'token',
   maxReconnectAttempts: 10,
   requestTimeout: 30000,
-  heartbeatInterval: 30000
+  heartbeatInterval: 30000,
+  reconnectBackoffMultiplier: 1.2, // Faster reconnection
+  logLevel: LogLevel.ERROR      // Minimal logging
 });
 
 // Batch events for better performance
 const events = ['event1', 'event2', 'event3'];
 events.forEach(eventName => {
-  client.event.send(eventName, { timestamp: Date.now() });
+  client.sendEvent(eventName, { timestamp: Date.now() });
 });
 ```
 

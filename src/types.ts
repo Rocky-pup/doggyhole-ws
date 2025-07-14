@@ -1,66 +1,117 @@
-interface ClientInfo {
+export interface ClientInfo {
   name: string;
   token: string;
 }
 
-interface ServerOptions {
+export enum ConnectionState {
+  CONNECTING = 'connecting',
+  CONNECTED = 'connected',
+  DISCONNECTING = 'disconnecting',
+  DISCONNECTED = 'disconnected',
+  RECONNECTING = 'reconnecting'
+}
+
+export enum LogLevel {
+  ERROR = 'error',
+  WARN = 'warn',
+  INFO = 'info',
+  DEBUG = 'debug'
+}
+
+export interface IDoggyHoleError extends Error {
+  code: string;
+  details?: any;
+}
+
+
+export interface EventSchema {
+  eventName: string;
+  schema?: any;
+  required?: boolean;
+}
+
+export interface ClientGroup {
+  name: string;
+  clients: Set<string>;
+  metadata?: Record<string, any>;
+}
+
+export interface ServerOptions {
   port: number;
   heartbeatInterval?: number;
   heartbeatTimeout?: number;
+  maxConnections?: number;
+  logLevel?: LogLevel;
+  gracefulShutdownTimeout?: number;
+  messageQueueSize?: number;
 }
 
-interface ClientOptions {
+export interface ClientOptions {
   url: string;
   name: string;
   token: string;
   maxReconnectAttempts?: number;
   heartbeatInterval?: number;
   requestTimeout?: number;
+  logLevel?: LogLevel;
+  reconnectBackoffMultiplier?: number;
 }
 
-interface AuthMessage {
+export interface AuthMessage {
   type: 'auth';
   name: string;
   token: string;
 }
 
-interface RequestMessage {
+export interface RequestMessage<T = any> {
   type: 'request';
   id: string;
   functionName: string;
-  data: any;
+  data: T;
 }
 
-interface ClientRequestMessage {
+export interface ClientRequestMessage<T = any> {
   type: 'client_request';
   id: string;
   functionName: string;
-  data: any;
+  data: T;
   targetClient: string;
   fromClient?: string;
 }
 
-interface ResponseMessage {
+export interface ResponseMessage<T = any> {
   type: 'response';
   id: string;
   success: boolean;
-  data?: any;
+  data?: T;
   error?: string;
   originalFromClient?: string;
 }
 
-interface HeartbeatMessage {
+export interface HeartbeatMessage {
   type: 'heartbeat';
 }
 
-interface HeartbeatResponseMessage {
+export interface HeartbeatResponseMessage {
   type: 'heartbeat_response';
 }
 
-interface EventMessage {
+export interface EventMessage<T = any> {
   type: 'event';
   eventName: string;
-  data: any;
+  data: T;
 }
 
-type Message = AuthMessage | RequestMessage | ClientRequestMessage | ResponseMessage | HeartbeatMessage | HeartbeatResponseMessage | EventMessage;
+export interface ShutdownMessage {
+  type: 'shutdown';
+  reason?: string;
+  gracePeriod?: number;
+}
+
+
+export type Message = AuthMessage | RequestMessage | ClientRequestMessage | ResponseMessage | HeartbeatMessage | HeartbeatResponseMessage | EventMessage | ShutdownMessage;
+
+export type EventHandler<T = any> = (data: T) => void | Promise<void>;
+export type RequestHandler<TReq = any, TRes = any> = (data: TReq) => TRes | Promise<TRes>;
+export type ErrorHandler = (error: IDoggyHoleError) => void;
+export type ConnectionStateHandler = (state: ConnectionState) => void;

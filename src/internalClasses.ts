@@ -1,4 +1,5 @@
 import { EventEmitter } from 'stream';
+import WebSocket from 'ws';
 
 import { DoggyHoleClient, DoggyHoleServer } from './';
 
@@ -328,7 +329,7 @@ export class DoggyHoleServerEventManager {
   }
   
   private broadcastToOthers(eventName: string, data: any, fromClient: string): void {
-    const eventMessage: EventMessage = {
+    const eventMessage: any = {
       type: 'event',
       eventName,
       data: { ...data, fromClient }
@@ -346,7 +347,7 @@ export class DoggyHoleServerEventManager {
   }
   
   broadcastToAll(eventName: string, data: any, fromClient: string = 'server'): void {
-    const eventMessage: EventMessage = {
+    const eventMessage: any = {
       type: 'event',
       eventName,
       data: { ...data, fromClient }

@@ -2,14 +2,36 @@ import { EventEmitter } from 'events';
 import WebSocket from 'ws';
 
 import { DoggyHoleClientEventManager, DoggyHoleServerEventManager } from './internalClasses';
+import { 
+  ServerOptions, 
+  ClientOptions, 
+  ConnectionState, 
+  LogLevel,
+  RequestHandler,
+  ConnectionStateHandler,
+  ClientInfo
+} from './types';
+import { 
+  DoggyHoleError,
+  AuthenticationError,
+  ConnectionError,
+  TimeoutError,
+  HandlerNotFoundError,
+  ClientNotFoundError,
+  NetworkError
+} from './errors';
+import { Logger } from './logger';
 
 export class DoggyHoleServer extends EventEmitter {
   private wss: WebSocket.Server;
   private clients: Map<string, ClientInfo> = new Map();
   private connectedClients: Map<WebSocket, { name: string; lastHeartbeat: number }> = new Map();
-  private handlers: Map<string, Function> = new Map();
+  private handlers: Map<string, RequestHandler> = new Map();
   private heartbeatInterval: NodeJS.Timeout | null = null;
   private options: Required<ServerOptions>;
+  private logger: Logger;
+  private isShuttingDown: boolean = false;
+  private shutdownPromise: Promise<void> | null = null;
   public event: DoggyHoleServerEventManager;
 
   constructor(options: ServerOptions) {
@@ -17,12 +39,21 @@ export class DoggyHoleServer extends EventEmitter {
     this.options = {
       port: options.port,
       heartbeatInterval: options.heartbeatInterval || 1000,
-      heartbeatTimeout: options.heartbeatTimeout || 3000
+      heartbeatTimeout: options.heartbeatTimeout || 3000,
+      maxConnections: options.maxConnections || 1000,
+      logLevel: options.logLevel || LogLevel.INFO,
+      gracefulShutdownTimeout: options.gracefulShutdownTimeout || 5000,
+      messageQueueSize: options.messageQueueSize || 100
     };
-    this.wss = new WebSocket.Server({ port: this.options.port });
+    this.logger = new Logger('Server', this.options.logLevel);
+    this.wss = new WebSocket.Server({ 
+      port: this.options.port,
+      maxPayload: 1024 * 1024 // 1MB max message size
+    });
     this.event = new DoggyHoleServerEventManager(this);
     this.setupServer();
     this.startHeartbeat();
+    this.logger.info(`Server started on port ${this.options.port}`);
   }
 
   static create(options: ServerOptions): DoggyHoleServer {
@@ -46,13 +77,17 @@ export class DoggyHoleServer extends EventEmitter {
     return this;
   }
 
-  addHandler(functionName: string, handler: Function): DoggyHoleServer {
+  addHandler<TReq = any, TRes = any>(functionName: string, handler: RequestHandler<TReq, TRes>): DoggyHoleServer {
     this.handlers.set(functionName, handler);
+    this.logger.debug(`Handler added: ${functionName}`);
     return this;
   }
 
   removeHandler(functionName: string): DoggyHoleServer {
-    this.handlers.delete(functionName);
+    const removed = this.handlers.delete(functionName);
+    if (removed) {
+      this.logger.debug(`Handler removed: ${functionName}`);
+    }
     return this;
   }
 
@@ -61,63 +96,81 @@ export class DoggyHoleServer extends EventEmitter {
       let isAuthenticated = false;
       let clientName = '';
 
+      // Check connection limit
+      if (this.connectedClients.size >= this.options.maxConnections) {
+        this.logger.warn('Connection limit reached');
+        ws.close(1013, 'Server overloaded');
+        return;
+      }
+
       ws.on('message', async (data: WebSocket.Data) => {
         try {
-          const message: Message = JSON.parse(data.toString());
+          const message: any = JSON.parse(data.toString());
 
           if (message.type === 'auth' && !isAuthenticated) {
-            await this.handleAuth(ws, message as AuthMessage);
+            await this.handleAuth(ws, message);
             isAuthenticated = true;
-            clientName = (message as AuthMessage).name;
+            clientName = message.name;
             this.connectedClients.set(ws, { name: clientName, lastHeartbeat: Date.now() });
           } else if (message.type === 'request' && isAuthenticated) {
-            await this.handleRequest(ws, message as RequestMessage);
+            await this.handleRequest(ws, message);
           } else if (message.type === 'client_request' && isAuthenticated) {
-            await this.handleClientRequest(ws, message as ClientRequestMessage);
+            await this.handleClientRequest(ws, message);
           } else if (message.type === 'response' && isAuthenticated) {
-            this.handleResponse(ws, message as ResponseMessage);
+            this.handleResponse(ws, message);
           } else if (message.type === 'heartbeat_response' && isAuthenticated) {
             this.handleHeartbeatResponse(ws);
           } else if (message.type === 'event' && isAuthenticated) {
-            this.handleEvent(ws, message as EventMessage);
+            this.handleEvent(ws, message);
           } else if (!isAuthenticated) {
             ws.close(1008, 'Authentication required');
           }
         } catch (error) {
+          this.logger.error('Message handling error:', error);
           this.sendError(ws, 'Invalid message format');
         }
       });
 
-      ws.on('close', () => {
+      ws.on('close', (code, reason) => {
         this.connectedClients.delete(ws);
         if (clientName) {
+          this.logger.info(`Client disconnected: ${clientName} (${code}: ${reason})`);
           this.emit('clientDisconnected', clientName);
         }
       });
 
       ws.on('error', (error) => {
-        console.error('WebSocket error:', error);
+        this.logger.error('WebSocket error:', error);
         this.connectedClients.delete(ws);
       });
     });
+
+    this.wss.on('error', (error) => {
+      this.logger.error('Server error:', error);
+      this.emit('error', new NetworkError('Server error', { originalError: error }));
+    });
   }
 
-  private async handleAuth(ws: WebSocket, message: AuthMessage): Promise<void> {
+  private async handleAuth(ws: WebSocket, message: any): Promise<void> {
     const clientInfo = this.clients.get(message.name);
     
     if (!clientInfo || clientInfo.token !== message.token) {
+      this.logger.warn(`Authentication failed for client: ${message.name}`);
       ws.close(1008, 'Invalid credentials');
-      return;
+      throw new AuthenticationError('Invalid credentials', { clientName: message.name });
     }
 
+    this.logger.info(`Client connected: ${message.name}`);
     this.emit('clientConnected', message.name);
   }
 
-  private async handleRequest(ws: WebSocket, message: RequestMessage): Promise<void> {
+  private async handleRequest(ws: WebSocket, message: any): Promise<void> {
     const handler = this.handlers.get(message.functionName);
     
     if (!handler) {
-      this.sendResponse(ws, message.id, false, null, 'Handler not found');
+      const error = new HandlerNotFoundError(message.functionName);
+      this.logger.warn(error.message);
+      this.sendResponse(ws, message.id, false, null, error.message);
       return;
     }
 
@@ -125,19 +178,23 @@ export class DoggyHoleServer extends EventEmitter {
       const result = await handler(message.data);
       this.sendResponse(ws, message.id, true, result);
     } catch (error) {
-      this.sendResponse(ws, message.id, false, null, error instanceof Error ? error.message : 'Unknown error');
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      this.logger.error(`Request handler error for ${message.functionName}:`, error);
+      this.sendResponse(ws, message.id, false, null, errorMessage);
     }
   }
 
-  private async handleClientRequest(ws: WebSocket, message: ClientRequestMessage): Promise<void> {
+  private async handleClientRequest(ws: WebSocket, message: any): Promise<void> {
     const targetClient = this.findClientByName(message.targetClient);
     
     if (!targetClient) {
-      this.sendResponse(ws, message.id, false, null, 'Target client not found');
+      const error = new ClientNotFoundError(message.targetClient);
+      this.logger.warn(error.message);
+      this.sendResponse(ws, message.id, false, null, error.message);
       return;
     }
 
-    const clientRequestMessage: ClientRequestMessage = {
+    const clientRequestMessage: any = {
       type: 'client_request',
       id: message.id,
       functionName: message.functionName,
@@ -149,11 +206,13 @@ export class DoggyHoleServer extends EventEmitter {
     if (targetClient.readyState === WebSocket.OPEN) {
       targetClient.send(JSON.stringify(clientRequestMessage));
     } else {
-      this.sendResponse(ws, message.id, false, null, 'Target client not available');
+      const error = new ConnectionError('Target client not available');
+      this.logger.warn(error.message);
+      this.sendResponse(ws, message.id, false, null, error.message);
     }
   }
 
-  private handleResponse(ws: WebSocket, message: ResponseMessage): void {
+  private handleResponse(_ws: WebSocket, message: any): void {
     if (message.originalFromClient) {
       const originalClient = this.findClientByName(message.originalFromClient);
       if (originalClient && originalClient.readyState === WebSocket.OPEN) {
@@ -169,11 +228,10 @@ export class DoggyHoleServer extends EventEmitter {
     }
   }
 
-  private handleEvent(ws: WebSocket, message: EventMessage): void {
+  private handleEvent(ws: WebSocket, message: any): void {
     const clientData = this.connectedClients.get(ws);
     if (clientData) {
       this.event.handleIncomingEvent(clientData.name, message.eventName, message.data);
-      this.emit('event', message.eventName, message.data, clientData.name);
     }
   }
 
@@ -199,64 +257,9 @@ export class DoggyHoleServer extends EventEmitter {
     return Array.from(this.connectedClients.values()).map(client => client.name);
   }
 
-  onEvent(eventName: string, handler: (...args: any[]) => void): DoggyHoleServer {
-    this.event.on(eventName, handler);
-    return this;
-  }
-
-  onceEvent(eventName: string, handler: (...args: any[]) => void): DoggyHoleServer {
-    this.event.once(eventName, handler);
-    return this;
-  }
-
-  offEvent(eventName: string, handler?: (...args: any[]) => void): DoggyHoleServer {
-    if (handler) {
-      this.event.off(eventName, handler);
-    } else {
-      this.event.off(eventName);
-    }
-    return this;
-  }
-
-  emitEvent(eventName: string, data?: any): boolean {
-    return this.event.emit(eventName, data);
-  }
-
-  broadcastEvent(eventName: string, data?: any): void {
-    this.event.broadcast(eventName, data);
-  }
-
-  hasEventListeners(eventName: string): boolean {
-    return this.event.hasListeners(eventName);
-  }
-
-  getEventListenerCount(eventName: string): number {
-    return this.event.getListenerCount(eventName);
-  }
-
-  getEventNames(): string[] {
-    return this.event.getEventNames();
-  }
-
-  setMaxEventListeners(max: number): DoggyHoleServer {
-    this.event.setMaxListeners(max);
-    return this;
-  }
-
-  getMaxEventListeners(): number {
-    return this.event.getMaxListeners();
-  }
-
-  clearAllEvents(): void {
-    this.event.clearAll();
-  }
-
-  clearEvent(eventName: string): void {
-    this.event.clearEvent(eventName);
-  }
 
   private sendResponse(ws: WebSocket, id: string, success: boolean, data?: any, error?: string): void {
-    const response: ResponseMessage = {
+    const response: any = {
       type: 'response',
       id,
       success,
@@ -293,11 +296,60 @@ export class DoggyHoleServer extends EventEmitter {
     }, this.options.heartbeatInterval);
   }
 
+  getLogger(): Logger {
+    return this.logger;
+  }
+
+  isServerShuttingDown(): boolean {
+    return this.isShuttingDown;
+  }
+
+  async gracefulShutdown(reason?: string): Promise<void> {
+    if (this.shutdownPromise) {
+      return this.shutdownPromise;
+    }
+
+    this.isShuttingDown = true;
+    this.logger.info(`Starting graceful shutdown: ${reason || 'No reason provided'}`);
+
+    this.shutdownPromise = new Promise<void>(async (resolve) => {
+      // Notify all clients about shutdown
+      const shutdownMessage = {
+        type: 'shutdown',
+        reason: reason || 'Server shutdown',
+        gracePeriod: this.options.gracefulShutdownTimeout
+      };
+
+      for (const [ws] of this.connectedClients) {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify(shutdownMessage));
+        }
+      }
+
+      // Wait for graceful shutdown timeout
+      setTimeout(() => {
+        this.close();
+        resolve();
+      }, this.options.gracefulShutdownTimeout);
+    });
+
+    return this.shutdownPromise;
+  }
+
   close(): void {
+    this.logger.info('Closing server');
+    
     if (this.heartbeatInterval) {
       clearInterval(this.heartbeatInterval);
     }
+    
+    // Close all client connections
+    for (const [ws] of this.connectedClients) {
+      ws.close(1001, 'Server shutdown');
+    }
+    
     this.wss.close();
+    this.emit('closed');
   }
 }
 
@@ -305,10 +357,13 @@ export class DoggyHoleClient extends EventEmitter {
   private ws: WebSocket | null = null;
   private options: Required<ClientOptions>;
   private requestId: number = 0;
-  private pendingRequests: Map<string, { resolve: Function; reject: Function }> = new Map();
+  private pendingRequests: Map<string, { resolve: Function; reject: Function; timeout: NodeJS.Timeout }> = new Map();
   private heartbeatInterval: NodeJS.Timeout | null = null;
   private reconnectAttempts: number = 0;
-  private clientHandlers: Map<string, Function> = new Map();
+  private clientHandlers: Map<string, RequestHandler> = new Map();
+  private connectionState: ConnectionState = ConnectionState.DISCONNECTED;
+  private logger: Logger;
+  private reconnectTimeout: NodeJS.Timeout | null = null;
   public event: DoggyHoleClientEventManager;
 
   constructor(options: ClientOptions) {
@@ -319,8 +374,11 @@ export class DoggyHoleClient extends EventEmitter {
       token: options.token,
       maxReconnectAttempts: options.maxReconnectAttempts || 5,
       heartbeatInterval: options.heartbeatInterval || 1000,
-      requestTimeout: options.requestTimeout || 10000
+      requestTimeout: options.requestTimeout || 10000,
+      logLevel: options.logLevel || LogLevel.INFO,
+      reconnectBackoffMultiplier: options.reconnectBackoffMultiplier || 1.5
     };
+    this.logger = new Logger(`Client:${this.options.name}`, this.options.logLevel);
     this.event = new DoggyHoleClientEventManager(this);
   }
 
@@ -343,8 +401,9 @@ export class DoggyHoleClient extends EventEmitter {
     return this;
   }
 
-  addHandler(functionName: string, handler: Function): DoggyHoleClient {
+  addHandler<TReq = any, TRes = any>(functionName: string, handler: RequestHandler<TReq, TRes>): DoggyHoleClient {
     this.clientHandlers.set(functionName, handler);
+    this.logger.debug(`Handler added: ${functionName}`);
     return this;
   }
 
@@ -354,13 +413,29 @@ export class DoggyHoleClient extends EventEmitter {
   }
 
   async connect(): Promise<void> {
+    if (this.connectionState === ConnectionState.CONNECTED) {
+      this.logger.warn('Already connected');
+      return;
+    }
+
+    if (this.connectionState === ConnectionState.CONNECTING) {
+      this.logger.warn('Connection already in progress');
+      return;
+    }
+
     return new Promise((resolve, reject) => {
+      this.setConnectionState(ConnectionState.CONNECTING);
+      
       this.ws = new WebSocket(this.options.url);
 
       this.ws.on('open', () => {
         this.authenticate();
         this.startHeartbeat();
         this.reconnectAttempts = 0;
+        this.setConnectionState(ConnectionState.CONNECTED);
+        
+        this.logger.info('Connected to server');
+        this.emit('connected');
         resolve();
       });
 
@@ -369,26 +444,31 @@ export class DoggyHoleClient extends EventEmitter {
       });
 
       this.ws.on('close', (code: number, reason: string) => {
+        this.logger.info(`Disconnected: ${code} - ${reason}`);
         this.cleanup();
+        this.setConnectionState(ConnectionState.DISCONNECTED);
         this.emit('disconnected', code, reason);
         
-        if (this.reconnectAttempts < this.options.maxReconnectAttempts) {
-          this.reconnectAttempts++;
-          setTimeout(() => this.connect(), 1000 * this.reconnectAttempts);
+        // Auto-reconnect if not intentionally disconnected
+        if (code !== 1000 && code !== 1001 && this.reconnectAttempts < this.options.maxReconnectAttempts && !this.isClientShuttingDown()) {
+          this.scheduleReconnect();
         }
       });
 
       this.ws.on('error', (error: Error) => {
+        this.logger.error('WebSocket error:', error);
         this.cleanup();
-        this.emit('error', error);
-        reject(error);
+        this.setConnectionState(ConnectionState.DISCONNECTED);
+        const connectionError = new ConnectionError('WebSocket connection failed', { originalError: error });
+        this.emit('error', connectionError);
+        reject(connectionError);
       });
     });
   }
 
   private authenticate(): void {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      const authMessage: AuthMessage = {
+      const authMessage: any = {
         type: 'auth',
         name: this.options.name,
         token: this.options.token
@@ -399,23 +479,26 @@ export class DoggyHoleClient extends EventEmitter {
 
   private handleMessage(data: WebSocket.Data): void {
     try {
-      const message: Message = JSON.parse(data.toString());
+      const message: any = JSON.parse(data.toString());
 
       if (message.type === 'response') {
-        this.handleResponse(message as ResponseMessage);
+        this.handleResponse(message);
       } else if (message.type === 'heartbeat') {
         this.handleHeartbeat();
       } else if (message.type === 'event') {
-        this.handleEvent(message as EventMessage);
+        this.handleEvent(message);
       } else if (message.type === 'client_request') {
-        this.handleClientRequest(message as ClientRequestMessage);
+        this.handleClientRequest(message);
+      } else if (message.type === 'shutdown') {
+        this.handleShutdown(message);
       }
     } catch (error) {
-      this.emit('error', new Error('Invalid message format'));
+      this.logger.error('Message parsing error:', error);
+      this.emit('error', new NetworkError('Invalid message format', { originalError: error }));
     }
   }
 
-  private async handleClientRequest(message: ClientRequestMessage): Promise<void> {
+  private async handleClientRequest(message: any): Promise<void> {
     const handler = this.clientHandlers.get(message.functionName);
     
     if (!handler) {
@@ -433,7 +516,7 @@ export class DoggyHoleClient extends EventEmitter {
 
   private sendClientResponse(id: string, success: boolean, data?: any, error?: string, originalFromClient?: string): void {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      const response: ResponseMessage = {
+      const response: any = {
         type: 'response',
         id,
         success,
@@ -445,39 +528,58 @@ export class DoggyHoleClient extends EventEmitter {
     }
   }
 
-  private handleResponse(message: ResponseMessage): void {
+  private handleResponse(message: any): void {
     const request = this.pendingRequests.get(message.id);
     if (request) {
+      clearTimeout(request.timeout);
       this.pendingRequests.delete(message.id);
+      
       if (message.success) {
         request.resolve(message.data);
       } else {
-        request.reject(new Error(message.error || 'Unknown error'));
+        const error = new DoggyHoleError(message.error || 'Unknown error', 'REQUEST_ERROR');
+        request.reject(error);
       }
     }
   }
 
   private handleHeartbeat(): void {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      const response: HeartbeatResponseMessage = {
+      const response: any = {
         type: 'heartbeat_response'
       };
       this.ws.send(JSON.stringify(response));
     }
   }
 
-  private handleEvent(message: EventMessage): void {
+  private handleEvent(message: any): void {
     this.event.handleIncomingEvent(message.eventName, message.data);
   }
 
-  sendEvent(eventName: string, data: any): void {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      const eventMessage: EventMessage = {
+  private handleShutdown(message: any): void {
+    this.logger.warn(`Server shutdown: ${message.reason || 'No reason'}`);
+    this.emit('serverShutdown', message.reason, message.gracePeriod);
+    
+    // Gracefully disconnect
+    setTimeout(() => {
+      if (this.isConnected()) {
+        this.disconnect();
+      }
+    }, Math.min(message.gracePeriod || 1000, 5000));
+  }
+
+  sendEvent<T = any>(eventName: string, data: T): void {
+    if (this.isConnected() && this.ws) {
+      const eventMessage: any = {
         type: 'event',
         eventName,
         data
       };
+      
       this.ws.send(JSON.stringify(eventMessage));
+      this.logger.debug(`Event sent: ${eventName}`);
+    } else {
+      this.logger.warn(`Cannot send event ${eventName}: not connected`);
     }
   }
 
@@ -489,42 +591,45 @@ export class DoggyHoleClient extends EventEmitter {
     }, this.options.heartbeatInterval);
   }
 
-  async request(functionName: string, data: any): Promise<any> {
+  async request<TReq = any, TRes = any>(functionName: string, data: TReq): Promise<TRes> {
     return new Promise((resolve, reject) => {
-      if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-        reject(new Error('WebSocket not connected'));
+      if (!this.isConnected()) {
+        reject(new ConnectionError('Client not connected'));
         return;
       }
 
       const id = (++this.requestId).toString();
-      const requestMessage: RequestMessage = {
+      const requestMessage: any = {
         type: 'request',
         id,
         functionName,
         data
       };
 
-      this.pendingRequests.set(id, { resolve, reject });
-      this.ws.send(JSON.stringify(requestMessage));
-
-      setTimeout(() => {
+      const timeout = setTimeout(() => {
         if (this.pendingRequests.has(id)) {
           this.pendingRequests.delete(id);
-          reject(new Error('Request timeout'));
+          const error = new TimeoutError(`Request timeout for ${functionName}`, { functionName, timeout: this.options.requestTimeout });
+          this.logger.warn(error.message);
+          reject(error);
         }
       }, this.options.requestTimeout);
+
+      this.pendingRequests.set(id, { resolve, reject, timeout });
+      
+      this.ws!.send(JSON.stringify(requestMessage));
     });
   }
 
-  async requestClient(targetClient: string, functionName: string, data: any): Promise<any> {
+  async requestClient<TReq = any, TRes = any>(targetClient: string, functionName: string, data: TReq): Promise<TRes> {
     return new Promise((resolve, reject) => {
-      if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-        reject(new Error('WebSocket not connected'));
+      if (!this.isConnected()) {
+        reject(new ConnectionError('Client not connected'));
         return;
       }
 
       const id = (++this.requestId).toString();
-      const clientRequestMessage: ClientRequestMessage = {
+      const clientRequestMessage: any = {
         type: 'client_request',
         id,
         functionName,
@@ -533,15 +638,18 @@ export class DoggyHoleClient extends EventEmitter {
         fromClient: this.options.name
       };
 
-      this.pendingRequests.set(id, { resolve, reject });
-      this.ws.send(JSON.stringify(clientRequestMessage));
-
-      setTimeout(() => {
+      const timeout = setTimeout(() => {
         if (this.pendingRequests.has(id)) {
           this.pendingRequests.delete(id);
-          reject(new Error('Request timeout'));
+          const error = new TimeoutError(`Client request timeout for ${targetClient}.${functionName}`, { targetClient, functionName, timeout: this.options.requestTimeout });
+          this.logger.warn(error.message);
+          reject(error);
         }
       }, this.options.requestTimeout);
+
+      this.pendingRequests.set(id, { resolve, reject, timeout });
+      
+      this.ws!.send(JSON.stringify(clientRequestMessage));
     });
   }
 
@@ -551,21 +659,92 @@ export class DoggyHoleClient extends EventEmitter {
       this.heartbeatInterval = null;
     }
     
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
+    }
+    
     for (const [_, request] of this.pendingRequests) {
-      request.reject(new Error('Connection closed'));
+      clearTimeout(request.timeout);
+      request.reject(new ConnectionError('Connection closed'));
     }
     this.pendingRequests.clear();
   }
 
   disconnect(): void {
+    this.setConnectionState(ConnectionState.DISCONNECTING);
+    this.logger.info('Disconnecting from server');
     this.cleanup();
     if (this.ws) {
       this.ws.close(1000, 'Client disconnecting');
       this.ws = null;
     }
+    this.setConnectionState(ConnectionState.DISCONNECTED);
   }
 
   isConnected(): boolean {
-    return this.ws !== null && this.ws.readyState === WebSocket.OPEN;
+    return this.connectionState === ConnectionState.CONNECTED;
+  }
+
+  getConnectionState(): ConnectionState {
+    return this.connectionState;
+  }
+
+  private setConnectionState(state: ConnectionState): void {
+    if (this.connectionState !== state) {
+      const oldState = this.connectionState;
+      this.connectionState = state;
+      this.logger.debug(`Connection state changed: ${oldState} -> ${state}`);
+      this.emit('stateChange', state, oldState);
+    }
+  }
+
+  onStateChange(handler: ConnectionStateHandler): DoggyHoleClient {
+    this.on('stateChange', handler);
+    return this;
+  }
+
+  private scheduleReconnect(): void {
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+    }
+
+    this.reconnectAttempts++;
+    const delay = Math.min(
+      1000 * Math.pow(this.options.reconnectBackoffMultiplier, this.reconnectAttempts - 1),
+      30000 // Max 30 seconds
+    );
+
+    this.setConnectionState(ConnectionState.RECONNECTING);
+    this.logger.info(`Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${this.options.maxReconnectAttempts})`);
+    
+    this.reconnectTimeout = setTimeout(() => {
+      this.connect().catch((error) => {
+        this.logger.error('Reconnection failed:', error);
+      });
+    }, delay);
+  }
+
+  private isClientShuttingDown(): boolean {
+    return this.connectionState === ConnectionState.DISCONNECTING;
+  }
+
+  getLogger(): Logger {
+    return this.logger;
   }
 }
+
+// Export all types and classes for TypeScript users
+export * from './types';
+export {
+  DoggyHoleError,
+  AuthenticationError,
+  ConnectionError,
+  TimeoutError,
+  ValidationError,
+  HandlerNotFoundError,
+  ClientNotFoundError,
+  NetworkError
+} from './errors';
+export { Logger } from './logger';
+export { DoggyHoleClientEventManager, DoggyHoleServerEventManager } from './internalClasses';
