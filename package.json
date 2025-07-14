@@ -1,0 +1,36 @@
+{
+  "name": "foxhole-ws",
+  "version": "0.0.1",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist/**/*"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "start": "npm run build && node dist/index.js",
+    "watch": "tsc -w",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": ["websocket", "foxhole", "events", "client", "server"],
+  "author": "Rocky-pup",
+  "license": "MIT",
+  "description": "Small server and client for events and requests via WebSocket.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Rocky-pup/foxhole-ws.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Rocky-pup/foxhole-ws/issues"
+  },
+  "homepage": "https://github.com/Rocky-pup/foxhole-ws#readme",
+  "devDependencies": {
+    "@types/events": "^3.0.3",
+    "@types/ws": "^8.18.1",
+    "typescript": "^5.8.3"
+  },
+  "dependencies": {
+    "events": "^3.3.0",
+    "ws": "^8.18.3"
+  }
+}
