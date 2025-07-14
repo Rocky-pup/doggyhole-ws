@@ -1,4 +1,4 @@
-# 🐺 FoxHole WebSocket Library
+# 🐺 DoggyHole WebSocket Library
 
 A floofy, feature-rich WebSocket library for Node.js that makes real-time communication as cozy as a den! Perfect for building snuggly client-server applications with peer-to-peer capabilities.
 
@@ -16,7 +16,7 @@ A floofy, feature-rich WebSocket library for Node.js that makes real-time commun
 ## 🚀 Installation
 
 ```bash
-npm install foxhole-ws
+npm install doggyhole-ws
 ```
 
 ## 🎯 Quick Start
@@ -24,9 +24,9 @@ npm install foxhole-ws
 ### Server Setup
 
 ```typescript
-import { FoxHoleServer } from 'foxhole-ws';
+import { DoggyHoleServer } from 'doggyhole-ws';
 
-const server = FoxHoleServer.create({
+const server = DoggyHoleServer.create({
   port: 8080,
   heartbeatInterval: 1000,
   heartbeatTimeout: 3000
@@ -51,9 +51,9 @@ server.on('clientDisconnected', (clientName) => {
 ### Client Setup
 
 ```typescript
-import { FoxHoleClient } from 'foxhole-ws';
+import { DoggyHoleClient } from 'doggyhole-ws';
 
-const client = FoxHoleClient.create({
+const client = DoggyHoleClient.create({
   url: 'ws://localhost:8080',
   name: 'client1',
   token: 'secret-token-1',
@@ -69,7 +69,7 @@ console.log(response);
 
 ## 📚 API Reference
 
-### FoxHoleServer
+### DoggyHoleServer
 
 #### Constructor Options
 
@@ -83,10 +83,10 @@ interface ServerOptions {
 
 #### Methods
 
-- `setUser(name: string, token: string): FoxHoleServer` - Add authenticated user
-- `removeUser(name: string): FoxHoleServer` - Remove user and disconnect them
-- `addHandler(functionName: string, handler: Function): FoxHoleServer` - Add request handler
-- `removeHandler(functionName: string): FoxHoleServer` - Remove request handler
+- `setUser(name: string, token: string): DoggyHoleServer` - Add authenticated user
+- `removeUser(name: string): DoggyHoleServer` - Remove user and disconnect them
+- `addHandler(functionName: string, handler: Function): DoggyHoleServer` - Add request handler
+- `removeHandler(functionName: string): DoggyHoleServer` - Remove request handler
 - `getConnectedClients(): Map<WebSocket, ClientData>` - Get connected clients
 - `getConnectedClientNames(): string[]` - Get list of connected client names
 - `close(): void` - Close server
@@ -97,7 +97,7 @@ interface ServerOptions {
 - `clientDisconnected(clientName: string)` - When a client disconnects
 - `clientTimeout(clientName: string)` - When a client times out
 
-### FoxHoleClient
+### DoggyHoleClient
 
 #### Constructor Options
 
@@ -118,8 +118,8 @@ interface ClientOptions {
 - `disconnect(): void` - Disconnect from server
 - `request(functionName: string, data: any): Promise<any>` - Make server request
 - `requestClient(targetClient: string, functionName: string, data: any): Promise<any>` - Request from another client
-- `addHandler(functionName: string, handler: Function): FoxHoleClient` - Add client request handler
-- `removeHandler(functionName: string): FoxHoleClient` - Remove client request handler
+- `addHandler(functionName: string, handler: Function): DoggyHoleClient` - Add client request handler
+- `removeHandler(functionName: string): DoggyHoleClient` - Remove client request handler
 - `sendEvent(eventName: string, data: any): void` - Send event
 - `isConnected(): boolean` - Check connection status
 
@@ -133,13 +133,13 @@ interface ClientOptions {
 ### Client-to-Client Communication
 
 ```typescript
-const client1 = FoxHoleClient.create({
+const client1 = DoggyHoleClient.create({
   url: 'ws://localhost:8080',
   name: 'calculator',
   token: 'token1'
 });
 
-const client2 = FoxHoleClient.create({
+const client2 = DoggyHoleClient.create({
   url: 'ws://localhost:8080',
   name: 'user',
   token: 'token2'
@@ -214,7 +214,7 @@ try {
 
 ## 🏗️ Architecture
 
-FoxHole uses a hub-and-spoke model where:
+DoggyHole uses a hub-and-spoke model where:
 
 1. **Server** acts as the central hub managing all connections
 2. **Clients** connect to the server with token authentication
@@ -227,7 +227,7 @@ FoxHole uses a hub-and-spoke model where:
 ### High-Performance Server
 
 ```typescript
-const server = FoxHoleServer.create({
+const server = DoggyHoleServer.create({
   port: 8080,
   heartbeatInterval: 500,
   heartbeatTimeout: 1500
@@ -237,7 +237,7 @@ const server = FoxHoleServer.create({
 ### Reliable Client
 
 ```typescript
-const client = FoxHoleClient.create({
+const client = DoggyHoleClient.create({
   url: 'ws://localhost:8080',
   name: 'reliable-client',
   token: 'secure-token',
@@ -249,7 +249,7 @@ const client = FoxHoleClient.create({
 
 ## 🤝 Contributing
 
-We welcome contributions to make FoxHole even more pawsome! Please:
+We welcome contributions to make DoggyHole even more pawsome! Please:
 
 1. Fork the repository
 2. Create a feature branch
@@ -266,4 +266,4 @@ Having trouble? Create an issue on GitHub or join our community chat!
 
 ---
 
-*Made with 💙 by the FoxHole pack - Building cozy connections, one WebSocket at a time!*
+*Made with 💙 by the DoggyHole pack - Building cozy connections, one WebSocket at a time!*

@@ -1,19 +1,19 @@
-import { FoxHoleClient, FoxHoleServer } from './';
+import { DoggyHoleClient, DoggyHoleServer } from './';
 
-export class FoxHoleClientEventManager {
-  private client: FoxHoleClient;
+export class DoggyHoleClientEventManager {
+  private client: DoggyHoleClient;
   private eventHandlers: Map<string, Set<Function>> = new Map();
-  constructor(client: FoxHoleClient) {
+  constructor(client: DoggyHoleClient) {
     this.client = client;
   }
-  on(eventName: string, handler: Function): FoxHoleClientEventManager {
+  on(eventName: string, handler: Function): DoggyHoleClientEventManager {
     if (!this.eventHandlers.has(eventName)) {
       this.eventHandlers.set(eventName, new Set());
     }
     this.eventHandlers.get(eventName)!.add(handler);
     return this;
   }
-  off(eventName: string, handler: Function): FoxHoleClientEventManager {
+  off(eventName: string, handler: Function): DoggyHoleClientEventManager {
     const handlers = this.eventHandlers.get(eventName);
     if (handlers) {
       handlers.delete(handler);
@@ -43,9 +43,9 @@ export class FoxHoleClientEventManager {
   }
 }
 
-export class FoxHoleServerEventManager {
-  private server: FoxHoleServer;
-  constructor(server: FoxHoleServer) {
+export class DoggyHoleServerEventManager {
+  private server: DoggyHoleServer;
+  constructor(server: DoggyHoleServer) {
     this.server = server;
   }
   handleIncomingEvent(fromClient: string, eventName: string, data: any): void {

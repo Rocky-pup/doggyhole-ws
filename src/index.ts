@@ -1,16 +1,16 @@
 import { EventEmitter } from 'events';
 import WebSocket from 'ws';
 
-import { FoxHoleClientEventManager, FoxHoleServerEventManager } from './internalClasses';
+import { DoggyHoleClientEventManager, DoggyHoleServerEventManager } from './internalClasses';
 
-export class FoxHoleServer extends EventEmitter {
+export class DoggyHoleServer extends EventEmitter {
   private wss: WebSocket.Server;
   private clients: Map<string, ClientInfo> = new Map();
   private connectedClients: Map<WebSocket, { name: string; lastHeartbeat: number }> = new Map();
   private handlers: Map<string, Function> = new Map();
   private heartbeatInterval: NodeJS.Timeout | null = null;
   private options: Required<ServerOptions>;
-  public event: FoxHoleServerEventManager;
+  public event: DoggyHoleServerEventManager;
 
   constructor(options: ServerOptions) {
     super();
@@ -20,21 +20,21 @@ export class FoxHoleServer extends EventEmitter {
       heartbeatTimeout: options.heartbeatTimeout || 3000
     };
     this.wss = new WebSocket.Server({ port: this.options.port });
-    this.event = new FoxHoleServerEventManager(this);
+    this.event = new DoggyHoleServerEventManager(this);
     this.setupServer();
     this.startHeartbeat();
   }
 
-  static create(options: ServerOptions): FoxHoleServer {
-    return new FoxHoleServer(options);
+  static create(options: ServerOptions): DoggyHoleServer {
+    return new DoggyHoleServer(options);
   }
 
-  setUser(name: string, token: string): FoxHoleServer {
+  setUser(name: string, token: string): DoggyHoleServer {
     this.clients.set(name, { name, token });
     return this;
   }
 
-  removeUser(name: string): FoxHoleServer {
+  removeUser(name: string): DoggyHoleServer {
     this.clients.delete(name);
     for (const [ws, clientData] of this.connectedClients) {
       if (clientData.name === name) {
@@ -46,12 +46,12 @@ export class FoxHoleServer extends EventEmitter {
     return this;
   }
 
-  addHandler(functionName: string, handler: Function): FoxHoleServer {
+  addHandler(functionName: string, handler: Function): DoggyHoleServer {
     this.handlers.set(functionName, handler);
     return this;
   }
 
-  removeHandler(functionName: string): FoxHoleServer {
+  removeHandler(functionName: string): DoggyHoleServer {
     this.handlers.delete(functionName);
     return this;
   }
@@ -244,7 +244,7 @@ export class FoxHoleServer extends EventEmitter {
   }
 }
 
-export class FoxHoleClient extends EventEmitter {
+export class DoggyHoleClient extends EventEmitter {
   private ws: WebSocket | null = null;
   private options: Required<ClientOptions>;
   private requestId: number = 0;
@@ -252,7 +252,7 @@ export class FoxHoleClient extends EventEmitter {
   private heartbeatInterval: NodeJS.Timeout | null = null;
   private reconnectAttempts: number = 0;
   private clientHandlers: Map<string, Function> = new Map();
-  public event: FoxHoleClientEventManager;
+  public event: DoggyHoleClientEventManager;
 
   constructor(options: ClientOptions) {
     super();
@@ -264,34 +264,34 @@ export class FoxHoleClient extends EventEmitter {
       heartbeatInterval: options.heartbeatInterval || 1000,
       requestTimeout: options.requestTimeout || 10000
     };
-    this.event = new FoxHoleClientEventManager(this);
+    this.event = new DoggyHoleClientEventManager(this);
   }
 
-  static create(options: ClientOptions): FoxHoleClient {
-    return new FoxHoleClient(options);
+  static create(options: ClientOptions): DoggyHoleClient {
+    return new DoggyHoleClient(options);
   }
 
-  setName(name: string): FoxHoleClient {
+  setName(name: string): DoggyHoleClient {
     this.options.name = name;
     return this;
   }
 
-  setToken(token: string): FoxHoleClient {
+  setToken(token: string): DoggyHoleClient {
     this.options.token = token;
     return this;
   }
 
-  setUrl(url: string): FoxHoleClient {
+  setUrl(url: string): DoggyHoleClient {
     this.options.url = url;
     return this;
   }
 
-  addHandler(functionName: string, handler: Function): FoxHoleClient {
+  addHandler(functionName: string, handler: Function): DoggyHoleClient {
     this.clientHandlers.set(functionName, handler);
     return this;
   }
 
-  removeHandler(functionName: string): FoxHoleClient {
+  removeHandler(functionName: string): DoggyHoleClient {
     this.clientHandlers.delete(functionName);
     return this;
   }
