@@ -10,7 +10,8 @@
     "build": "tsc",
     "start": "npm run build && node dist/index.js",
     "watch": "tsc -w",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "prepare": "npm run build"
   },
   "keywords": ["websocket", "foxhole", "events", "client", "server"],
   "author": "Rocky-pup",
