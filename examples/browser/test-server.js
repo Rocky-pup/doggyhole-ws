@@ -1,14 +1,3 @@
-/**
- * Test server for DoggyHole browser examples
- * Run this with Node.js to test the browser examples
- * 
- * Usage: node test-server.js
- */
-
-// Import the DoggyHole server (you'll need to install the package or build it first)
-// const { DoggyHoleServer } = require('../../dist/index.js');
-
-// For testing without building, you can use this simple mock:
 const { DoggyHoleServer } = (() => {
     try {
         return require('../../dist/index.js');
@@ -21,22 +10,27 @@ const { DoggyHoleServer } = (() => {
 
 console.log('🐺 Starting DoggyHole test server...');
 
-// Create server
 const server = DoggyHoleServer.create({
     port: 8080,
     heartbeatInterval: 5000,
     heartbeatTimeout: 10000
 });
 
-// Add test users
+const accounts = {
+    'secret-token-1': 'client1',
+    'secret-token-2': 'client2',
+    'alice-token': 'alice',
+    'bob-token': 'bob',
+    'charlie-token': 'charlie',
+    'dashboard-secret-token': 'dashboard-client'
+};
+
 server.setUser('client1', 'secret-token-1');
 server.setUser('client2', 'secret-token-2');
 server.setUser('alice', 'alice-token');
 server.setUser('bob', 'bob-token');
 server.setUser('charlie', 'charlie-token');
 server.setUser('dashboard-client', 'dashboard-secret-token');
-
-// Add server handlers
 server.addHandler('greet', (data) => {
     console.log('Greet handler called with:', data);
     return `Hello ${data.name || 'Anonymous'}! Welcome to the pack! 🐺`;
@@ -94,23 +88,22 @@ server.addHandler('calculate', (data) => {
     };
 });
 
-// Server lifecycle events
 server.on('clientConnected', (clientName) => {
-    console.log(`🎉 ${clientName} joined the pack!`);
+    const displayName = accounts[clientName] || clientName;
+    console.log(`🎉 ${displayName} joined the pack!`);
     
-    // Notify other clients about new user
     server.event.broadcastToAll('userJoined', {
-        username: clientName,
+        username: displayName,
         timestamp: Date.now()
     });
 });
 
 server.on('clientDisconnected', (clientName) => {
-    console.log(`👋 ${clientName} left the pack...`);
+    const displayName = accounts[clientName] || clientName;
+    console.log(`👋 ${displayName} left the pack...`);
     
-    // Notify other clients about user leaving
     server.event.broadcastToAll('userLeft', {
-        username: clientName,
+        username: displayName,
         timestamp: Date.now()
     });
 });
@@ -119,63 +112,60 @@ server.on('clientTimeout', (clientName) => {
     console.log(`⏱️  ${clientName} timed out`);
 });
 
-// Handle client events
-server.event.on('chatMessage', (data) => {
-    console.log(`💬 [${data.fromClient}]: ${data.message}`);
-    // Echo chat messages to all clients (this happens automatically)
+server.event.on('chatMessage', (data, fromClient) => {
+    const displayName = accounts[fromClient] || fromClient;
+    console.log(`💬 [${displayName}]: ${data.message}`);
+    server.event.broadcastToAll('chatMessage', {
+        ...data,
+        username: displayName,
+        timestamp: data.timestamp || Date.now()
+    });
 });
 
-server.event.on('testEvent', (data) => {
-    console.log(`🧪 Test event from ${data.fromClient}:`, data);
+server.event.on('testEvent', (data, fromClient) => {
+    console.log(`🧪 Test event from ${fromClient}:`, data);
 });
 
-// Handle dashboard metric events
-server.event.on('cpuMetric', (data) => {
-    console.log(`📊 CPU: ${data.usage?.toFixed(1)}% from ${data.fromClient}`);
+server.event.on('cpuMetric', (data, fromClient) => {
+    console.log(`📊 CPU: ${data.usage?.toFixed(1)}% from ${fromClient}`);
     
-    // Broadcast to dashboard clients
     server.event.broadcastToAll('cpuMetric', {
         ...data,
         serverTimestamp: Date.now()
     });
 });
 
-server.event.on('memoryMetric', (data) => {
-    console.log(`🧠 Memory: ${data.used}MB/${data.total}MB from ${data.fromClient}`);
+server.event.on('memoryMetric', (data, fromClient) => {
+    console.log(`🧠 Memory: ${data.used}MB/${data.total}MB from ${fromClient}`);
     
-    // Broadcast to dashboard clients
     server.event.broadcastToAll('memoryMetric', {
         ...data,
         serverTimestamp: Date.now()
     });
 });
 
-server.event.on('userMetric', (data) => {
-    console.log(`👥 Users: ${data.count} from ${data.fromClient}`);
+server.event.on('userMetric', (data, fromClient) => {
+    console.log(`👥 Users: ${data.count} from ${fromClient}`);
     
-    // Broadcast to dashboard clients
     server.event.broadcastToAll('userMetric', {
         ...data,
         serverTimestamp: Date.now()
     });
 });
 
-server.event.on('requestMetric', (data) => {
-    console.log(`📈 Requests/sec: ${data.perSecond} from ${data.fromClient}`);
+server.event.on('requestMetric', (data, fromClient) => {
+    console.log(`📈 Requests/sec: ${data.perSecond} from ${fromClient}`);
     
-    // Broadcast to dashboard clients
     server.event.broadcastToAll('requestMetric', {
         ...data,
         serverTimestamp: Date.now()
     });
 });
 
-// Error handling
 server.on('error', (error) => {
     console.error('❌ Server error:', error);
 });
 
-// Graceful shutdown
 process.on('SIGINT', async () => {
     console.log('\n🛑 Shutting down server gracefully...');
     await server.gracefulShutdown('Server shutdown requested');
@@ -204,9 +194,7 @@ console.log('   - simple-example.html (for basic testing)');
 console.log('');
 console.log('🛑 Press Ctrl+C to stop the server');
 
-// Send periodic test data for dashboard
 setInterval(() => {
-    // Simulate system metrics
     server.event.broadcastToAll('cpuMetric', {
         usage: Math.random() * 100,
         source: 'system-monitor',
@@ -230,4 +218,4 @@ setInterval(() => {
         source: 'api-gateway',
         timestamp: Date.now()
     });
-}, 10000); // Every 10 seconds
+}, 10000);

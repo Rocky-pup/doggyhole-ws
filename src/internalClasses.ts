@@ -1,20 +1,33 @@
-import { EventEmitter } from 'stream';
+import { EventEmitter } from 'events';
 import WebSocket from 'ws';
 
-import { DoggyHoleClient, DoggyHoleServer } from './';
+interface DoggyHoleClientInterface {
+  sendEvent(eventName: string, data?: any): void;
+}
+
+interface DoggyHoleServerInterface {
+  getConnectedClients(): Map<WebSocket, { name: string; lastHeartbeat: number }>;
+}
 
 export class DoggyHoleClientEventManager {
-  private client: DoggyHoleClient;
+  private client: DoggyHoleClientInterface;
   private eventHandlers: Map<string, Set<(...args: any[]) => void>> = new Map();
   private onceHandlers: Map<string, Set<(...args: any[]) => void>> = new Map();
   private maxListeners: number = 10;
   private internalEmitter: EventEmitter = new EventEmitter();
   
-  constructor(client: DoggyHoleClient) {
+  constructor(client: DoggyHoleClientInterface) {
     this.client = client;
   }
   
   on(eventName: string, handler: (...args: any[]) => void): DoggyHoleClientEventManager {
+    if (!eventName || typeof eventName !== 'string') {
+      throw new Error('Event name must be a non-empty string');
+    }
+    if (!handler || typeof handler !== 'function') {
+      throw new Error('Handler must be a function');
+    }
+    
     if (!this.eventHandlers.has(eventName)) {
       this.eventHandlers.set(eventName, new Set());
     }
@@ -31,6 +44,13 @@ export class DoggyHoleClientEventManager {
   }
   
   once(eventName: string, handler: (...args: any[]) => void): DoggyHoleClientEventManager {
+    if (!eventName || typeof eventName !== 'string') {
+      throw new Error('Event name must be a non-empty string');
+    }
+    if (!handler || typeof handler !== 'function') {
+      throw new Error('Handler must be a function');
+    }
+    
     if (!this.onceHandlers.has(eventName)) {
       this.onceHandlers.set(eventName, new Set());
     }
@@ -69,6 +89,9 @@ export class DoggyHoleClientEventManager {
   }
   
   send(eventName: string, data?: any): void {
+    if (!eventName || typeof eventName !== 'string') {
+      throw new Error('Event name must be a non-empty string');
+    }
     this.client.sendEvent(eventName, data);
   }
   
@@ -76,14 +99,14 @@ export class DoggyHoleClientEventManager {
     this.send(eventName, data);
   }
   
-  handleIncomingEvent(eventName: string, data: any): void {
+  handleIncomingEvent(eventName: string, data: any, fromClient?: string): void {
     const handlers = this.eventHandlers.get(eventName);
     const onceHandlers = this.onceHandlers.get(eventName);
     
     if (handlers) {
       handlers.forEach(handler => {
         try {
-          handler(data);
+          handler(data, fromClient);
         } catch (error) {
           console.error(`Error in event handler for '${eventName}':`, error);
           this.internalEmitter.emit('handlerError', eventName, error, handler);
@@ -101,7 +124,7 @@ export class DoggyHoleClientEventManager {
       
       handlersToRemove.forEach(handler => {
         try {
-          handler(data);
+          handler(data, fromClient);
         } catch (error) {
           console.error(`Error in once event handler for '${eventName}':`, error);
           this.internalEmitter.emit('handlerError', eventName, error, handler);
@@ -109,7 +132,7 @@ export class DoggyHoleClientEventManager {
       });
     }
     
-    this.internalEmitter.emit('eventReceived', eventName, data);
+    this.internalEmitter.emit('eventReceived', eventName, data, fromClient);
   }
   
   hasListeners(eventName: string): boolean {
@@ -214,17 +237,24 @@ export class DoggyHoleClientEventManager {
 }
 
 export class DoggyHoleServerEventManager {
-  private server: DoggyHoleServer;
+  private server: DoggyHoleServerInterface;
   private eventHandlers: Map<string, Set<(...args: any[]) => void>> = new Map();
   private onceHandlers: Map<string, Set<(...args: any[]) => void>> = new Map();
   private maxListeners: number = 10;
   private internalEmitter: EventEmitter = new EventEmitter();
   
-  constructor(server: DoggyHoleServer) {
+  constructor(server: DoggyHoleServerInterface) {
     this.server = server;
   }
   
   on(eventName: string, handler: (...args: any[]) => void): DoggyHoleServerEventManager {
+    if (!eventName || typeof eventName !== 'string') {
+      throw new Error('Event name must be a non-empty string');
+    }
+    if (!handler || typeof handler !== 'function') {
+      throw new Error('Handler must be a function');
+    }
+    
     if (!this.eventHandlers.has(eventName)) {
       this.eventHandlers.set(eventName, new Set());
     }
@@ -278,7 +308,7 @@ export class DoggyHoleServerEventManager {
     return this;
   }
   
-  emit(eventName: string, data?: any): boolean {
+  emit(eventName: string, data?: any, fromClient?: string): boolean {
     const handlers = this.eventHandlers.get(eventName);
     const onceHandlers = this.onceHandlers.get(eventName);
     
@@ -288,7 +318,7 @@ export class DoggyHoleServerEventManager {
       hasListeners = true;
       handlers.forEach(handler => {
         try {
-          handler(data);
+          handler(data, fromClient);
         } catch (error) {
           console.error(`Error in event handler for '${eventName}':`, error);
           this.internalEmitter.emit('handlerError', eventName, error, handler);
@@ -307,7 +337,7 @@ export class DoggyHoleServerEventManager {
       
       handlersToRemove.forEach(handler => {
         try {
-          handler(data);
+          handler(data, fromClient);
         } catch (error) {
           console.error(`Error in once event handler for '${eventName}':`, error);
           this.internalEmitter.emit('handlerError', eventName, error, handler);
@@ -315,7 +345,7 @@ export class DoggyHoleServerEventManager {
       });
     }
     
-    this.internalEmitter.emit('eventEmitted', eventName, data);
+    this.internalEmitter.emit('eventEmitted', eventName, data, fromClient);
     return hasListeners;
   }
   
@@ -324,7 +354,7 @@ export class DoggyHoleServerEventManager {
   }
   
   handleIncomingEvent(fromClient: string, eventName: string, data: any): void {
-    this.emit(eventName, {...data, fromClient: fromClient});
+    this.emit(eventName, data, fromClient);
     this.broadcastToOthers(eventName, data, fromClient);
   }
   
@@ -332,7 +362,8 @@ export class DoggyHoleServerEventManager {
     const eventMessage: any = {
       type: 'event',
       eventName,
-      data: { ...data, fromClient }
+      data: { ...data, fromClient },
+      fromClient
     };
     const connectedClients = this.server.getConnectedClients();
     for (const [ws, clientData] of connectedClients) {

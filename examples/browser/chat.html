@@ -14,10 +14,10 @@
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            overflow: hidden;
         }
 
         .chat-container {
@@ -26,10 +26,14 @@
             box-shadow: 0 20px 40px rgba(0,0,0,0.1);
             width: 90%;
             max-width: 800px;
-            height: 80vh;
+            height: calc(100vh - 10px);
             display: flex;
             flex-direction: column;
             overflow: hidden;
+            position: fixed;
+            top: 5px;
+            left: 50%;
+            transform: translateX(-50%);
         }
 
         .header {
@@ -115,6 +119,7 @@
             flex: 1;
             display: flex;
             flex-direction: column;
+            min-height: 0;
         }
 
         .messages {
@@ -122,6 +127,7 @@
             padding: 20px;
             overflow-y: auto;
             background: #f8f9fa;
+            min-height: 0;
         }
 
         .message {
@@ -138,10 +144,18 @@
             margin-left: auto;
             text-align: right;
         }
+        
+        .message.own .username {
+            color: rgba(255, 255, 255, 0.8);
+        }
 
         .message.other {
             background: white;
             border: 1px solid #ddd;
+        }
+        
+        .message.other .username {
+            color: #667eea;
         }
 
         .message.system {
@@ -175,6 +189,7 @@
             border-top: 1px solid #ddd;
             display: flex;
             gap: 10px;
+            flex-shrink: 0;
         }
 
         .input-section input {
@@ -234,11 +249,12 @@
         
         <div class="login-section" id="loginSection">
             <h2>Join the Pack</h2>
-            <input type="text" id="usernameInput" placeholder="Enter your username" />
+            <input type="text" id="usernameInput" placeholder="Enter your username (optional)" />
             <input type="password" id="tokenInput" placeholder="Enter your token" />
             <button id="connectBtn">Connect</button>
             <small style="color: #666; margin-top: 10px;">
-                Default tokens: alice-token, bob-token, charlie-token
+                Default tokens: alice-token, bob-token, charlie-token<br>
+                Or use URL: ?token=your-token
             </small>
         </div>
         
@@ -260,6 +276,7 @@
                 this.username = '';
                 this.initializeElements();
                 this.bindEvents();
+                this.checkUrlParameters();
             }
 
             initializeElements() {
@@ -300,19 +317,20 @@
                 const username = this.usernameInput.value.trim();
                 const token = this.tokenInput.value.trim();
 
-                if (!username || !token) {
-                    alert('Please enter both username and token');
+                if (!token) {
+                    alert('Please enter a token');
                     return;
                 }
 
-                this.username = username;
+                // Store the entered username for display, but auth will determine actual name
+                this.username = username || 'Anonymous';
                 this.updateStatus('connecting', 'Connecting...');
 
                 try {
                     // Create client instance
                     this.client = DoggyHoleBrowserClient.create({
                         url: 'ws://localhost:8080', // Change this to your server URL
-                        name: username,
+                        name: username || undefined, // Use username if provided, otherwise token-only auth
                         token: token,
                         maxReconnectAttempts: 5,
                         requestTimeout: 10000
@@ -333,8 +351,10 @@
 
             setupClientEvents() {
                 // Connection events
-                this.client.addEventListener('connected', () => {
+                this.client.addEventListener('connected', (event) => {
                     console.log('Connected to server!');
+                    // Update username to the one returned by server
+                    this.username = event.detail?.name || this.username;
                     this.updateStatus('connected', 'Connected');
                     this.showChatSection();
                     this.addSystemMessage(`Welcome to the pack, ${this.username}! 🐺`);
@@ -358,15 +378,16 @@
                 });
 
                 // Chat events
-                this.client.on('chatMessage', (data) => {
-                    this.addMessage(data.fromClient, data.message, data.timestamp, false);
+                this.client.on('chatMessage', (data, fromClient) => {
+                    console.log('Received message data:', data, 'fromClient:', fromClient);
+                    this.addMessage(fromClient || data.fromClient || data.username || 'Unknown', data.message, data.timestamp, false);
                 });
 
-                this.client.on('userJoined', (data) => {
+                this.client.on('userJoined', (data, fromClient) => {
                     this.addSystemMessage(`${data.username} joined the chat 🎉`);
                 });
 
-                this.client.on('userLeft', (data) => {
+                this.client.on('userLeft', (data, fromClient) => {
                     this.addSystemMessage(`${data.username} left the chat 👋`);
                 });
 
@@ -466,6 +487,17 @@
                 this.loginSection.style.display = 'flex';
                 this.chatSection.style.display = 'none';
                 this.messagesContainer.innerHTML = '';
+            }
+
+            checkUrlParameters() {
+                const urlParams = new URLSearchParams(window.location.search);
+                const token = urlParams.get('token');
+                
+                if (token) {
+                    this.tokenInput.value = token;
+                    // Auto-connect if token is provided in URL
+                    setTimeout(() => this.connect(), 100);
+                }
             }
         }
 

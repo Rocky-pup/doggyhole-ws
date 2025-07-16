@@ -96,7 +96,6 @@ export class DoggyHoleServer extends EventEmitter {
       let isAuthenticated = false;
       let clientName = '';
 
-      // Check connection limit
       if (this.connectedClients.size >= this.options.maxConnections) {
         this.logger.warn('Connection limit reached');
         ws.close(1013, 'Server overloaded');
@@ -107,10 +106,16 @@ export class DoggyHoleServer extends EventEmitter {
         try {
           const message: any = JSON.parse(data.toString());
 
+          if (!message || typeof message !== 'object' || !message.type) {
+            this.logger.warn('Invalid message format: missing type');
+            this.sendError(ws, 'Invalid message format');
+            return;
+          }
+
           if (message.type === 'auth' && !isAuthenticated) {
             await this.handleAuth(ws, message);
             isAuthenticated = true;
-            clientName = message.name;
+            clientName = this.getClientNameFromAuth(message);
             this.connectedClients.set(ws, { name: clientName, lastHeartbeat: Date.now() });
           } else if (message.type === 'request' && isAuthenticated) {
             await this.handleRequest(ws, message);
@@ -152,19 +157,63 @@ export class DoggyHoleServer extends EventEmitter {
   }
 
   private async handleAuth(ws: WebSocket, message: any): Promise<void> {
-    const clientInfo = this.clients.get(message.name);
+    let clientInfo: ClientInfo | undefined;
+    let clientName: string | undefined;
     
-    if (!clientInfo || clientInfo.token !== message.token) {
-      this.logger.warn(`Authentication failed for client: ${message.name}`);
+    if (message.name) {
+      clientInfo = this.clients.get(message.name);
+      clientName = message.name;
+    } else {
+      for (const [name, info] of this.clients) {
+        if (info.token === message.token) {
+          clientInfo = info;
+          clientName = name;
+          break;
+        }
+      }
+    }
+    
+    if (!clientInfo || clientInfo.token !== message.token || !clientName) {
+      this.logger.warn(`Authentication failed for client: ${message.name || 'token-only'}`);
       ws.close(1008, 'Invalid credentials');
-      throw new AuthenticationError('Invalid credentials', { clientName: message.name });
+      throw new AuthenticationError('Invalid credentials', { clientName: message.name || 'token-only' });
     }
 
-    this.logger.info(`Client connected: ${message.name}`);
-    this.emit('clientConnected', message.name);
+    const authResponse = {
+      type: 'auth_success',
+      name: clientName
+    };
+    ws.send(JSON.stringify(authResponse));
+
+    this.logger.info(`Client connected: ${clientName}`);
+    this.emit('clientConnected', clientName);
+  }
+
+  private getClientNameFromAuth(message: any): string {
+    if (message.name) {
+      return message.name;
+    }
+    
+    for (const [name, info] of this.clients) {
+      if (info.token === message.token) {
+        return name;
+      }
+    }
+    
+    throw new AuthenticationError('Invalid token', { token: message.token });
   }
 
   private async handleRequest(ws: WebSocket, message: any): Promise<void> {
+    if (!message.functionName || typeof message.functionName !== 'string') {
+      this.sendResponse(ws, message.id, false, null, 'Invalid function name');
+      return;
+    }
+
+    if (!message.id || typeof message.id !== 'string') {
+      this.logger.warn('Request received without valid ID');
+      return;
+    }
+
     const handler = this.handlers.get(message.functionName);
     
     if (!handler) {
@@ -185,6 +234,21 @@ export class DoggyHoleServer extends EventEmitter {
   }
 
   private async handleClientRequest(ws: WebSocket, message: any): Promise<void> {
+    if (!message.targetClient || typeof message.targetClient !== 'string') {
+      this.sendResponse(ws, message.id, false, null, 'Invalid target client');
+      return;
+    }
+
+    if (!message.functionName || typeof message.functionName !== 'string') {
+      this.sendResponse(ws, message.id, false, null, 'Invalid function name');
+      return;
+    }
+
+    if (!message.id || typeof message.id !== 'string') {
+      this.logger.warn('Client request received without valid ID');
+      return;
+    }
+
     const targetClient = this.findClientByName(message.targetClient);
     
     if (!targetClient) {
@@ -313,7 +377,6 @@ export class DoggyHoleServer extends EventEmitter {
     this.logger.info(`Starting graceful shutdown: ${reason || 'No reason provided'}`);
 
     this.shutdownPromise = new Promise<void>(async (resolve) => {
-      // Notify all clients about shutdown
       const shutdownMessage = {
         type: 'shutdown',
         reason: reason || 'Server shutdown',
@@ -326,7 +389,6 @@ export class DoggyHoleServer extends EventEmitter {
         }
       }
 
-      // Wait for graceful shutdown timeout
       setTimeout(() => {
         this.close();
         resolve();
@@ -343,7 +405,6 @@ export class DoggyHoleServer extends EventEmitter {
       clearInterval(this.heartbeatInterval);
     }
     
-    // Close all client connections
     for (const [ws] of this.connectedClients) {
       ws.close(1001, 'Server shutdown');
     }
@@ -368,10 +429,22 @@ export class DoggyHoleClient extends EventEmitter {
 
   constructor(options: ClientOptions) {
     super();
+    
+    let token = options.token;
+    let url = options.url;
+    if (!token && url.includes('?')) {
+      const urlParts = url.split('?');
+      const params = new URLSearchParams(urlParts[1]);
+      token = params.get('token') || '';
+      url = urlParts[0];
+    }
+    
+    const name = options.name || token;
+    
     this.options = {
-      url: options.url,
-      name: options.name,
-      token: options.token,
+      url: url,
+      name: name,
+      token: token,
       maxReconnectAttempts: options.maxReconnectAttempts || 5,
       heartbeatInterval: options.heartbeatInterval || 1000,
       requestTimeout: options.requestTimeout || 10000,
@@ -449,7 +522,6 @@ export class DoggyHoleClient extends EventEmitter {
         this.setConnectionState(ConnectionState.DISCONNECTED);
         this.emit('disconnected', code, reason);
         
-        // Auto-reconnect if not intentionally disconnected
         if (code !== 1000 && code !== 1001 && this.reconnectAttempts < this.options.maxReconnectAttempts && !this.isClientShuttingDown()) {
           this.scheduleReconnect();
         }
@@ -470,9 +542,13 @@ export class DoggyHoleClient extends EventEmitter {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       const authMessage: any = {
         type: 'auth',
-        name: this.options.name,
         token: this.options.token
       };
+      
+      if (this.options.name && this.options.name !== this.options.token) {
+        authMessage.name = this.options.name;
+      }
+      
       this.ws.send(JSON.stringify(authMessage));
     }
   }
@@ -480,6 +556,12 @@ export class DoggyHoleClient extends EventEmitter {
   private handleMessage(data: WebSocket.Data): void {
     try {
       const message: any = JSON.parse(data.toString());
+
+      if (!message || typeof message !== 'object' || !message.type) {
+        this.logger.warn('Invalid message format: missing type');
+        this.emit('error', new NetworkError('Invalid message format'));
+        return;
+      }
 
       if (message.type === 'response') {
         this.handleResponse(message);
@@ -491,6 +573,10 @@ export class DoggyHoleClient extends EventEmitter {
         this.handleClientRequest(message);
       } else if (message.type === 'shutdown') {
         this.handleShutdown(message);
+      } else if (message.type === 'auth_success') {
+        this.handleAuthSuccess(message);
+      } else {
+        this.logger.warn(`Unknown message type: ${message.type}`);
       }
     } catch (error) {
       this.logger.error('Message parsing error:', error);
@@ -499,6 +585,16 @@ export class DoggyHoleClient extends EventEmitter {
   }
 
   private async handleClientRequest(message: any): Promise<void> {
+    if (!message.functionName || typeof message.functionName !== 'string') {
+      this.sendClientResponse(message.id, false, null, 'Invalid function name', message.fromClient);
+      return;
+    }
+
+    if (!message.id || typeof message.id !== 'string') {
+      this.logger.warn('Client request received without valid ID');
+      return;
+    }
+
     const handler = this.clientHandlers.get(message.functionName);
     
     if (!handler) {
@@ -553,19 +649,24 @@ export class DoggyHoleClient extends EventEmitter {
   }
 
   private handleEvent(message: any): void {
-    this.event.handleIncomingEvent(message.eventName, message.data);
+    this.event.handleIncomingEvent(message.eventName, message.data, message.fromClient);
   }
 
   private handleShutdown(message: any): void {
     this.logger.warn(`Server shutdown: ${message.reason || 'No reason'}`);
     this.emit('serverShutdown', message.reason, message.gracePeriod);
     
-    // Gracefully disconnect
     setTimeout(() => {
       if (this.isConnected()) {
         this.disconnect();
       }
     }, Math.min(message.gracePeriod || 1000, 5000));
+  }
+
+  private handleAuthSuccess(message: any): void {
+    this.options.name = message.name;
+    this.logger.info(`Authentication successful. Client name: ${message.name}`);
+    this.emit('authSuccess', message.name);
   }
 
   sendEvent<T = any>(eventName: string, data: T): void {
@@ -712,7 +813,7 @@ export class DoggyHoleClient extends EventEmitter {
     this.reconnectAttempts++;
     const delay = Math.min(
       1000 * Math.pow(this.options.reconnectBackoffMultiplier, this.reconnectAttempts - 1),
-      30000 // Max 30 seconds
+      30000
     );
 
     this.setConnectionState(ConnectionState.RECONNECTING);
@@ -732,9 +833,12 @@ export class DoggyHoleClient extends EventEmitter {
   getLogger(): Logger {
     return this.logger;
   }
+
+  getName(): string {
+    return this.options.name;
+  }
 }
 
-// Export all types and classes for TypeScript users
 export * from './types';
 export {
   DoggyHoleError,

@@ -1,8 +1,3 @@
-/**
- * DoggyHole Browser Client
- * A browser-compatible WebSocket client that mimics the DoggyHole API
- * No dependencies required - uses native browser WebSocket and EventTarget
- */
 class DoggyHoleBrowserClient extends EventTarget {
     constructor(options) {
         super();
@@ -70,7 +65,6 @@ class DoggyHoleBrowserClient extends EventTarget {
                     detail: { code: event.code, reason: event.reason } 
                 }));
                 
-                // Auto-reconnect if not intentionally disconnected
                 if (event.code !== 1000 && event.code !== 1001 && 
                     this.reconnectAttempts < this.options.maxReconnectAttempts) {
                     this.scheduleReconnect();
@@ -91,9 +85,13 @@ class DoggyHoleBrowserClient extends EventTarget {
         if (this.ws && this.ws.readyState === WebSocket.OPEN) {
             const authMessage = {
                 type: 'auth',
-                name: this.options.name,
                 token: this.options.token
             };
+            
+            if (this.options.name && this.options.name !== this.options.token) {
+                authMessage.name = this.options.name;
+            }
+            
             this.ws.send(JSON.stringify(authMessage));
         }
     }
@@ -101,6 +99,12 @@ class DoggyHoleBrowserClient extends EventTarget {
     handleMessage(data) {
         try {
             const message = JSON.parse(data);
+
+            if (!message || typeof message !== 'object' || !message.type) {
+                console.warn('Invalid message format: missing type');
+                this.dispatchEvent(new CustomEvent('error', { detail: new Error('Invalid message format') }));
+                return;
+            }
 
             if (message.type === 'response') {
                 this.handleResponse(message);
@@ -112,6 +116,10 @@ class DoggyHoleBrowserClient extends EventTarget {
                 this.handleClientRequest(message);
             } else if (message.type === 'shutdown') {
                 this.handleShutdown(message);
+            } else if (message.type === 'auth_success') {
+                this.handleAuthSuccess(message);
+            } else {
+                console.warn(`Unknown message type: ${message.type}`);
             }
         } catch (error) {
             console.error('Message parsing error:', error);
@@ -120,6 +128,16 @@ class DoggyHoleBrowserClient extends EventTarget {
     }
 
     async handleClientRequest(message) {
+        if (!message.functionName || typeof message.functionName !== 'string') {
+            this.sendClientResponse(message.id, false, null, 'Invalid function name', message.fromClient);
+            return;
+        }
+
+        if (!message.id || typeof message.id !== 'string') {
+            console.warn('Client request received without valid ID');
+            return;
+        }
+
         const handler = this.clientHandlers.get(message.functionName);
         
         if (!handler) {
@@ -176,7 +194,7 @@ class DoggyHoleBrowserClient extends EventTarget {
         const handlers = this.eventHandlers.get(message.eventName) || [];
         handlers.forEach(handler => {
             try {
-                handler({...message.data, fromClient: message.fromClient});
+                handler(message.data, message.fromClient);
             } catch (error) {
                 console.error(`Error in event handler for ${message.eventName}:`, error);
             }
@@ -189,12 +207,21 @@ class DoggyHoleBrowserClient extends EventTarget {
             detail: { reason: message.reason, gracePeriod: message.gracePeriod } 
         }));
         
-        // Gracefully disconnect
         setTimeout(() => {
             if (this.isConnected()) {
                 this.disconnect();
             }
         }, Math.min(message.gracePeriod || 1000, 5000));
+    }
+
+    handleAuthSuccess(message) {
+        if (message.name) {
+            this.options.name = message.name;
+        }
+        console.log(`Authentication successful. Client name: ${this.options.name}`);
+        this.dispatchEvent(new CustomEvent('authSuccess', { 
+            detail: { name: this.options.name } 
+        }));
     }
 
     async request(functionName, data) {
@@ -267,6 +294,10 @@ class DoggyHoleBrowserClient extends EventTarget {
     }
 
     sendEvent(eventName, data) {
+        if (!eventName || typeof eventName !== 'string') {
+            throw new Error('Event name must be a non-empty string');
+        }
+        
         if (this.isConnected() && this.ws) {
             const eventMessage = {
                 type: 'event',
@@ -282,6 +313,13 @@ class DoggyHoleBrowserClient extends EventTarget {
     }
 
     on(eventName, handler) {
+        if (!eventName || typeof eventName !== 'string') {
+            throw new Error('Event name must be a non-empty string');
+        }
+        if (!handler || typeof handler !== 'function') {
+            throw new Error('Handler must be a function');
+        }
+        
         if (!this.eventHandlers.has(eventName)) {
             this.eventHandlers.set(eventName, []);
         }
@@ -364,7 +402,7 @@ class DoggyHoleBrowserClient extends EventTarget {
         this.reconnectAttempts++;
         const delay = Math.min(
             1000 * Math.pow(this.options.reconnectBackoffMultiplier, this.reconnectAttempts - 1),
-            30000 // Max 30 seconds
+            30000
         );
 
         this.setConnectionState('reconnecting');
@@ -378,7 +416,6 @@ class DoggyHoleBrowserClient extends EventTarget {
     }
 }
 
-// Export for use in other files
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = DoggyHoleBrowserClient;
 }

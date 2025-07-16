@@ -13,6 +13,7 @@ A floofy, feature-rich WebSocket library for Node.js that makes real-time commun
 - 💓 **Heartbeat System**: Keep connections alive and detect timeouts
 - 🛡️ **Token Authentication**: Secure your den with token-based auth
 - 🎯 **Dual Event System**: `server.event.on()` for client events, `server.on()` for server lifecycle events
+- 📬 **Enhanced Event Handlers**: All event handlers receive `(data, fromClient)` parameters for better tracking
 - 🔗 **Connection State Management**: Track and respond to connection state changes
 - ⚡ **Structured Logging**: Configurable log levels with contextual information
 - 🛑 **Graceful Shutdown**: Properly close connections with notification
@@ -33,7 +34,7 @@ For browser usage with native HTML + CSS + JavaScript (no bundlers required), ch
 - **Dashboard** - Live metrics and monitoring 
 - **Simple Example** - Basic API demonstration
 
-The browser examples include a standalone `doggyhole-browser.js` client that provides the same API as the Node.js version using native browser WebSocket and EventTarget APIs.
+The browser examples include a standalone `doggyhole-browser.js` client that provides the same API as the Node.js version using native browser WebSocket and EventTarget APIs. All event handlers in the browser client also receive `(data, fromClient)` parameters.
 
 **Quick Start:**
 ```bash
@@ -80,10 +81,19 @@ server.on('clientDisconnected', (clientName) => {
 ```typescript
 import { DoggyHoleClient } from 'doggyhole-ws';
 
+// Option 1: Named authentication
 const client = DoggyHoleClient.create({
   url: 'ws://localhost:8080',
   name: 'client1',
   token: 'secret-token-1',
+  maxReconnectAttempts: 5,
+  requestTimeout: 10000
+});
+
+// Option 2: Token-only authentication
+const client2 = DoggyHoleClient.create({
+  url: 'ws://localhost:8080',
+  token: 'secret-token-1',  // Uses registered name for this token
   maxReconnectAttempts: 5,
   requestTimeout: 10000
 });
@@ -276,7 +286,7 @@ server.on('clientTimeout', (clientName: string) => {
 ```typescript
 interface ClientOptions {
   url: string;
-  name: string;
+  name?: string;                  // Optional - uses token if not provided
   token: string;
   maxReconnectAttempts?: number;  // Default: 5
   heartbeatInterval?: number;     // Default: 1000ms
@@ -292,10 +302,19 @@ interface ClientOptions {
 Create a new client instance.
 
 ```typescript
+// Named authentication
 const client = DoggyHoleClient.create({
   url: 'ws://localhost:8080',
   name: 'alice',
   token: 'alice-secret-token',
+  maxReconnectAttempts: 10,
+  requestTimeout: 15000
+});
+
+// Token-only authentication (name derived from token)
+const client2 = DoggyHoleClient.create({
+  url: 'ws://localhost:8080',
+  token: 'alice-secret-token',  // Will use registered name for this token
   maxReconnectAttempts: 10,
   requestTimeout: 15000
 });
@@ -522,28 +541,28 @@ Access the client event manager via `client.event`.
 
 #### Event Listening Methods
 
-##### `on(eventName: string, handler: (...args: any[]) => void): DoggyHoleClientEventManager`
-Listen for events from other clients.
+##### `on(eventName: string, handler: (data: any, fromClient: string) => void): DoggyHoleClientEventManager`
+Listen for events from other clients. All handlers receive `(data, fromClient)` parameters:
 
 ```typescript
-client.event.on('userMessage', (data) => {
-  console.log(`${data.fromClient}: ${data.message}`);
-  updateChatUI(data);
+client.event.on('userMessage', (data, fromClient) => {
+  console.log(`${fromClient}: ${data.message}`);
+  updateChatUI(data, fromClient);
 });
 
-client.event.on('gameMove', (data) => {
-  console.log(`${data.player} made move: ${data.move}`);
-  updateGameBoard(data);
+client.event.on('gameMove', (data, fromClient) => {
+  console.log(`${fromClient} made move: ${data.move}`);
+  updateGameBoard(data, fromClient);
 });
 ```
 
-##### `once(eventName: string, handler: (...args: any[]) => void): DoggyHoleClientEventManager`
-Listen for an event only once.
+##### `once(eventName: string, handler: (data: any, fromClient: string) => void): DoggyHoleClientEventManager`
+Listen for an event only once. Handlers receive `(data, fromClient)` parameters:
 
 ```typescript
-client.event.once('gameStart', (data) => {
-  console.log('Game started!');
-  initializeGame(data);
+client.event.once('gameStart', (data, fromClient) => {
+  console.log(`Game started by ${fromClient}!`);
+  initializeGame(data, fromClient);
 });
 ```
 
@@ -551,7 +570,7 @@ client.event.once('gameStart', (data) => {
 Remove event listener(s).
 
 ```typescript
-const messageHandler = (data) => console.log(data);
+const messageHandler = (data, fromClient) => console.log(`${fromClient}: ${data.message}`);
 client.event.on('message', messageHandler);
 
 // Remove specific handler
@@ -565,8 +584,8 @@ client.event.off('message');
 Alias for `on()`.
 
 ```typescript
-client.event.addListener('userJoined', (data) => {
-  console.log(`${data.username} joined!`);
+client.event.addListener('userJoined', (data, fromClient) => {
+  console.log(`${data.username} joined from ${fromClient}!`);
 });
 ```
 
@@ -721,24 +740,24 @@ Access the server event manager via `server.event` to handle client events. Use 
 
 #### Client Event Handling (use `server.event.on()`)
 
-Handle events sent by clients using `server.event.on()`:
+Handle events sent by clients using `server.event.on()`. All handlers receive `(data, fromClient)` parameters:
 
 ```typescript
 // Listen for chat messages from any client
-server.event.on('chatMessage', (data) => {
-  console.log(`[${data.fromClient}]: ${data.message}`);
+server.event.on('chatMessage', (data, fromClient) => {
+  console.log(`[${fromClient}]: ${data.message}`);
   // Process message, store in database, moderate content, etc.
 });
 
 // Listen for game moves
-server.event.on('gameMove', (data) => {
-  console.log(`Player ${data.fromClient} moved ${data.move}`);
+server.event.on('gameMove', (data, fromClient) => {
+  console.log(`Player ${fromClient} moved ${data.move}`);
   // Validate move, update game state
 });
 
 // Listen for user status updates
-server.event.on('statusChange', (data) => {
-  console.log(`${data.fromClient} is now ${data.status}`);
+server.event.on('statusChange', (data, fromClient) => {
+  console.log(`${fromClient} is now ${data.status}`);
   // Update user database, notify other systems
 });
 ```
@@ -783,14 +802,14 @@ server.setUser('alice', 'alice-token');
 server.setUser('bob', 'bob-token');
 
 // Handle chat messages on server-side
-server.event.on('chatMessage', (data) => {
-  console.log(`[${data.fromClient}]: ${data.message}`);
+server.event.on('chatMessage', (data, fromClient) => {
+  console.log(`[${fromClient}]: ${data.message}`);
   // Log to database, moderate content, etc.
 });
 
 // Handle user status changes
-server.event.on('statusChange', (data) => {
-  console.log(`${data.fromClient} is now ${data.status}`);
+server.event.on('statusChange', (data, fromClient) => {
+  console.log(`${fromClient} is now ${data.status}`);
   // Update user database, notify other systems
 });
 
@@ -810,9 +829,9 @@ client.event.send('chatMessage', {
 });
 
 // Listen for chat messages
-client.event.on('chatMessage', (data) => {
-  if (data.fromClient !== 'alice') {
-    console.log(`${data.fromClient}: ${data.message}`);
+client.event.on('chatMessage', (data, fromClient) => {
+  if (fromClient !== 'alice') {
+    console.log(`${fromClient}: ${data.message}`);
   }
 });
 
@@ -830,13 +849,13 @@ gameServer.setUser('player1', 'p1-token');
 gameServer.setUser('player2', 'p2-token');
 
 // Handle game events on server
-gameServer.event.on('gameMove', (data) => {
-  console.log(`Player ${data.fromClient} moved ${data.move}`);
+gameServer.event.on('gameMove', (data, fromClient) => {
+  console.log(`Player ${fromClient} moved ${data.move}`);
   // Validate move, update game state
 });
 
-gameServer.event.on('gameStart', (data) => {
-  console.log('Game started!');
+gameServer.event.on('gameStart', (data, fromClient) => {
+  console.log(`Game started by ${fromClient}!`);
   // Initialize game state
 });
 
@@ -878,8 +897,8 @@ player1.event.send('gameMove', {
 });
 
 // Listen for moves
-player2.event.on('gameMove', (data) => {
-  if (data.fromClient === 'player1') {
+player2.event.on('gameMove', (data, fromClient) => {
+  if (fromClient === 'player1') {
     console.log(`Player 1 moved: ${data.move}`);
     // Update game display
   }
@@ -897,13 +916,13 @@ gateway.setUser('user-service', 'user-token');
 gateway.setUser('order-service', 'order-token');
 
 // Handle service events
-gateway.event.on('userRegistered', (data) => {
-  console.log(`New user registered: ${data.userId}`);
+gateway.event.on('userRegistered', (data, fromClient) => {
+  console.log(`New user registered: ${data.userId} from ${fromClient}`);
   // Notify other services, update metrics
 });
 
-gateway.event.on('orderCreated', (data) => {
-  console.log(`Order created: ${data.orderId}`);
+gateway.event.on('orderCreated', (data, fromClient) => {
+  console.log(`Order created: ${data.orderId} from ${fromClient}`);
   // Process order, send notifications
 });
 
@@ -978,8 +997,8 @@ monitor.setUser('mobile-app', 'mobile-token');
 monitor.setUser('system-monitor', 'system-token');
 
 // Track system metrics
-monitor.event.on('cpuUsage', (data) => {
-  console.log(`CPU: ${data.percentage}% from ${data.fromClient}`);
+monitor.event.on('cpuUsage', (data, fromClient) => {
+  console.log(`CPU: ${data.percentage}% from ${fromClient}`);
   if (data.percentage > 90) {
     // Send alert
     monitor.event.broadcast('alert', {
@@ -990,8 +1009,8 @@ monitor.event.on('cpuUsage', (data) => {
   }
 });
 
-monitor.event.on('memoryUsage', (data) => {
-  console.log(`Memory: ${data.used}MB/${data.total}MB`);
+monitor.event.on('memoryUsage', (data, fromClient) => {
+  console.log(`Memory: ${data.used}MB/${data.total}MB from ${fromClient}`);
 });
 
 // System Monitor Client
@@ -1027,16 +1046,16 @@ const dashboard = DoggyHoleClient.create({
 await dashboard.connect();
 
 // Listen for metrics
-dashboard.event.on('cpuUsage', (data) => {
-  updateCpuChart(data);
+dashboard.event.on('cpuUsage', (data, fromClient) => {
+  updateCpuChart(data, fromClient);
 });
 
-dashboard.event.on('memoryUsage', (data) => {
-  updateMemoryChart(data);
+dashboard.event.on('memoryUsage', (data, fromClient) => {
+  updateMemoryChart(data, fromClient);
 });
 
-dashboard.event.on('alert', (data) => {
-  showAlert(data);
+dashboard.event.on('alert', (data, fromClient) => {
+  showAlert(data, fromClient);
 });
 ```
 
@@ -1099,12 +1118,12 @@ const response = await client.request<{ userId: number }, UserResponse>('getUser
 // response is typed as UserResponse
 
 // Typed events
-client.event.on('userUpdate', (data: UserData) => {
-  // data is typed as UserData
-  console.log('User updated:', data.name);
+client.event.on('userUpdate', (data: UserData, fromClient: string) => {
+  // data is typed as UserData, fromClient is string
+  console.log('User updated:', data.name, 'from', fromClient);
 });
 
-client.sendEvent<UserData>('userUpdate', { id: 1, name: 'Jane' });
+client.event.send<UserData>('userUpdate', { id: 1, name: 'Jane' });
 ```
 
 ### Connection State Management

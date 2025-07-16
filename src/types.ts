@@ -48,7 +48,7 @@ export interface ServerOptions {
 
 export interface ClientOptions {
   url: string;
-  name: string;
+  name?: string;
   token: string;
   maxReconnectAttempts?: number;
   heartbeatInterval?: number;
@@ -59,8 +59,13 @@ export interface ClientOptions {
 
 export interface AuthMessage {
   type: 'auth';
-  name: string;
+  name?: string;
   token: string;
+}
+
+export interface AuthSuccessMessage {
+  type: 'auth_success';
+  name: string;
 }
 
 export interface RequestMessage<T = any> {
@@ -109,7 +114,7 @@ export interface ShutdownMessage {
 }
 
 
-export type Message = AuthMessage | RequestMessage | ClientRequestMessage | ResponseMessage | HeartbeatMessage | HeartbeatResponseMessage | EventMessage | ShutdownMessage;
+export type Message = AuthMessage | AuthSuccessMessage | RequestMessage | ClientRequestMessage | ResponseMessage | HeartbeatMessage | HeartbeatResponseMessage | EventMessage | ShutdownMessage;
 
 export type EventHandler<T = any> = (data: T) => void | Promise<void>;
 export type RequestHandler<TReq = any, TRes = any> = (data: TReq) => TRes | Promise<TRes>;

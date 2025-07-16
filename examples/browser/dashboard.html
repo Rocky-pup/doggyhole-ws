@@ -200,34 +200,34 @@
                 });
 
                 // Metric events
-                this.client.on('cpuMetric', (data) => {
+                this.client.on('cpuMetric', (data, fromClient) => {
                     this.updateMetric('cpu', `${data.usage.toFixed(1)}%`);
-                    this.addLog(`CPU: ${data.usage.toFixed(1)}% (${data.source || 'unknown'})`);
+                    this.addLog(`CPU: ${data.usage.toFixed(1)}% (${data.source || fromClient || 'unknown'})`);
                 });
 
-                this.client.on('memoryMetric', (data) => {
+                this.client.on('memoryMetric', (data, fromClient) => {
                     this.updateMetric('memory', `${data.used}MB`);
-                    this.addLog(`Memory: ${data.used}MB/${data.total}MB (${data.source || 'unknown'})`);
+                    this.addLog(`Memory: ${data.used}MB/${data.total}MB (${data.source || fromClient || 'unknown'})`);
                 });
 
-                this.client.on('userMetric', (data) => {
+                this.client.on('userMetric', (data, fromClient) => {
                     this.updateMetric('users', data.count);
-                    this.addLog(`Active users: ${data.count}`);
+                    this.addLog(`Active users: ${data.count} (from: ${fromClient || 'unknown'})`);
                 });
 
-                this.client.on('requestMetric', (data) => {
+                this.client.on('requestMetric', (data, fromClient) => {
                     this.updateMetric('requests', data.perSecond);
-                    this.addLog(`Requests/sec: ${data.perSecond} (${data.source || 'unknown'})`);
+                    this.addLog(`Requests/sec: ${data.perSecond} (${data.source || fromClient || 'unknown'})`);
                 });
 
                 // Alert events
-                this.client.on('alert', (data) => {
-                    this.handleAlert(data);
+                this.client.on('alert', (data, fromClient) => {
+                    this.handleAlert(data, fromClient);
                 });
 
                 // System events
-                this.client.on('systemEvent', (data) => {
-                    this.addLog(`SYSTEM: ${data.message}`, 'system');
+                this.client.on('systemEvent', (data, fromClient) => {
+                    this.addLog(`SYSTEM: ${data.message} (from: ${fromClient || 'unknown'})`, 'system');
                 });
             }
 
@@ -292,13 +292,13 @@
                 return colors[type] || colors.info;
             }
 
-            handleAlert(data) {
-                this.addLog(`ALERT: ${data.message} (${data.type})`, 'alert');
+            handleAlert(data, fromClient) {
+                this.addLog(`ALERT: ${data.message} (${data.type}) from: ${fromClient || 'unknown'}`, 'alert');
                 
                 // Show browser notification if supported
                 if ('Notification' in window && Notification.permission === 'granted') {
                     new Notification('DoggyHole Alert', {
-                        body: data.message,
+                        body: `${data.message} (from: ${fromClient || 'unknown'})`,
                         icon: '🚨'
                     });
                 }
