@@ -115,11 +115,6 @@ server.on('clientTimeout', (clientName) => {
 server.event.on('chatMessage', (data, fromClient) => {
     const displayName = accounts[fromClient] || fromClient;
     console.log(`💬 [${displayName}]: ${data.message}`);
-    server.event.broadcastToOthers('chatMessage', {
-        ...data,
-        username: displayName,
-        timestamp: data.timestamp || Date.now()
-    }, fromClient);
 });
 
 server.event.on('testEvent', (data, fromClient) => {
@@ -128,38 +123,18 @@ server.event.on('testEvent', (data, fromClient) => {
 
 server.event.on('cpuMetric', (data, fromClient) => {
     console.log(`📊 CPU: ${data.usage?.toFixed(1)}% from ${fromClient}`);
-    
-    server.event.broadcastToAll('cpuMetric', {
-        ...data,
-        serverTimestamp: Date.now()
-    });
 });
 
 server.event.on('memoryMetric', (data, fromClient) => {
     console.log(`🧠 Memory: ${data.used}MB/${data.total}MB from ${fromClient}`);
-    
-    server.event.broadcastToAll('memoryMetric', {
-        ...data,
-        serverTimestamp: Date.now()
-    });
 });
 
 server.event.on('userMetric', (data, fromClient) => {
     console.log(`👥 Users: ${data.count} from ${fromClient}`);
-    
-    server.event.broadcastToAll('userMetric', {
-        ...data,
-        serverTimestamp: Date.now()
-    });
 });
 
 server.event.on('requestMetric', (data, fromClient) => {
     console.log(`📈 Requests/sec: ${data.perSecond} from ${fromClient}`);
-    
-    server.event.broadcastToAll('requestMetric', {
-        ...data,
-        serverTimestamp: Date.now()
-    });
 });
 
 server.on('error', (error) => {

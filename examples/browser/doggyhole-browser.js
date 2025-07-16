@@ -117,6 +117,7 @@ class DoggyHoleBrowserClient extends EventTarget {
             } else if (message.type === 'shutdown') {
                 this.handleShutdown(message);
             } else if (message.type === 'auth_success') {
+                console.log('Received auth_success message:', message);
                 this.handleAuthSuccess(message);
             } else {
                 console.warn(`Unknown message type: ${message.type}`);
@@ -215,13 +216,16 @@ class DoggyHoleBrowserClient extends EventTarget {
     }
 
     handleAuthSuccess(message) {
+        console.log('handleAuthSuccess called with:', message);
         if (message.name) {
             this.options.name = message.name;
         }
         console.log(`Authentication successful. Client name: ${this.options.name}`);
+        console.log('Dispatching authSuccess event...');
         this.dispatchEvent(new CustomEvent('authSuccess', { 
             detail: { name: this.options.name } 
         }));
+        console.log('authSuccess event dispatched');
     }
 
     async request(functionName, data) {

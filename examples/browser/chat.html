@@ -353,9 +353,14 @@
                 // Connection events
                 this.client.addEventListener('connected', (event) => {
                     console.log('Connected to server!');
+                    this.updateStatus('connected', 'Connected');
+                });
+
+                this.client.addEventListener('authSuccess', (event) => {
+                    console.log('Authentication successful!', event.detail);
+                    console.log('Showing chat section...');
                     // Update username to the one returned by server
                     this.username = event.detail?.name || this.username;
-                    this.updateStatus('connected', 'Connected');
                     this.showChatSection();
                     this.addSystemMessage(`Welcome to the pack, ${this.username}! 🐺`);
                 });
@@ -478,8 +483,13 @@
             }
 
             showChatSection() {
+                console.log('showChatSection called');
+                console.log('loginSection:', this.loginSection);
+                console.log('chatSection:', this.chatSection);
                 this.loginSection.style.display = 'none';
                 this.chatSection.style.display = 'flex';
+                console.log('After setting display - loginSection:', this.loginSection.style.display);
+                console.log('After setting display - chatSection:', this.chatSection.style.display);
                 this.messageInput.focus();
             }
 
