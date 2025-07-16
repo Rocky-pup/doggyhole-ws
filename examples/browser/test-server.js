@@ -115,11 +115,11 @@ server.on('clientTimeout', (clientName) => {
 server.event.on('chatMessage', (data, fromClient) => {
     const displayName = accounts[fromClient] || fromClient;
     console.log(`💬 [${displayName}]: ${data.message}`);
-    server.event.broadcastToAll('chatMessage', {
+    server.event.broadcastToOthers('chatMessage', {
         ...data,
         username: displayName,
         timestamp: data.timestamp || Date.now()
-    });
+    }, fromClient);
 });
 
 server.event.on('testEvent', (data, fromClient) => {
