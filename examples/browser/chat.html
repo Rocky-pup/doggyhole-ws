@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DoggyHole Chat</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .chat-container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            width: 90%;
+            max-width: 800px;
+            height: 80vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header h1 {
+            font-size: 1.5em;
+            margin: 0;
+        }
+
+        .connection-status {
+            padding: 8px 16px;
+            border-radius: 20px;
+            background: rgba(255,255,255,0.2);
+            font-size: 0.9em;
+            font-weight: bold;
+        }
+
+        .connection-status.connected {
+            background: #4CAF50;
+        }
+
+        .connection-status.connecting {
+            background: #FF9800;
+        }
+
+        .connection-status.disconnected {
+            background: #f44336;
+        }
+
+        .login-section {
+            padding: 40px;
+            text-align: center;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            gap: 20px;
+        }
+
+        .login-section h2 {
+            color: #333;
+            margin-bottom: 20px;
+        }
+
+        .login-section input {
+            padding: 15px;
+            border: 2px solid #ddd;
+            border-radius: 10px;
+            font-size: 16px;
+            width: 100%;
+            max-width: 300px;
+            margin: 0 auto;
+        }
+
+        .login-section input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .login-section button {
+            padding: 15px 30px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+
+        .login-section button:hover {
+            transform: translateY(-2px);
+        }
+
+        .chat-section {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .messages {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            background: #f8f9fa;
+        }
+
+        .message {
+            margin-bottom: 15px;
+            padding: 10px 15px;
+            border-radius: 15px;
+            max-width: 70%;
+            word-wrap: break-word;
+        }
+
+        .message.own {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            margin-left: auto;
+            text-align: right;
+        }
+
+        .message.other {
+            background: white;
+            border: 1px solid #ddd;
+        }
+
+        .message.system {
+            background: #e3f2fd;
+            color: #1976d2;
+            text-align: center;
+            font-style: italic;
+            margin: 10px auto;
+            max-width: 80%;
+        }
+
+        .message .username {
+            font-weight: bold;
+            font-size: 0.9em;
+            margin-bottom: 5px;
+        }
+
+        .message .content {
+            font-size: 1em;
+        }
+
+        .message .timestamp {
+            font-size: 0.8em;
+            opacity: 0.7;
+            margin-top: 5px;
+        }
+
+        .input-section {
+            padding: 20px;
+            background: white;
+            border-top: 1px solid #ddd;
+            display: flex;
+            gap: 10px;
+        }
+
+        .input-section input {
+            flex: 1;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 25px;
+            font-size: 14px;
+        }
+
+        .input-section input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .input-section button {
+            padding: 12px 24px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.2s;
+        }
+
+        .input-section button:hover {
+            background: #5a6fd8;
+        }
+
+        .input-section button:last-child {
+            background: #f44336;
+        }
+
+        .input-section button:last-child:hover {
+            background: #d32f2f;
+        }
+
+        @media (max-width: 768px) {
+            .chat-container {
+                width: 95%;
+                height: 90vh;
+            }
+            
+            .input-section {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="chat-container">
+        <div class="header">
+            <h1>🐺 DoggyHole Chat</h1>
+            <div class="connection-status" id="status">Disconnected</div>
+        </div>
+        
+        <div class="login-section" id="loginSection">
+            <h2>Join the Pack</h2>
+            <input type="text" id="usernameInput" placeholder="Enter your username" />
+            <input type="password" id="tokenInput" placeholder="Enter your token" />
+            <button id="connectBtn">Connect</button>
+            <small style="color: #666; margin-top: 10px;">
+                Default tokens: alice-token, bob-token, charlie-token
+            </small>
+        </div>
+        
+        <div class="chat-section" id="chatSection" style="display: none;">
+            <div class="messages" id="messages"></div>
+            <div class="input-section">
+                <input type="text" id="messageInput" placeholder="Type your message..." />
+                <button id="sendBtn">Send</button>
+                <button id="disconnectBtn">Disconnect</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="doggyhole-browser.js"></script>
+    <script>
+        class ChatApp {
+            constructor() {
+                this.client = null;
+                this.username = '';
+                this.initializeElements();
+                this.bindEvents();
+            }
+
+            initializeElements() {
+                // Login elements
+                this.loginSection = document.getElementById('loginSection');
+                this.usernameInput = document.getElementById('usernameInput');
+                this.tokenInput = document.getElementById('tokenInput');
+                this.connectBtn = document.getElementById('connectBtn');
+
+                // Chat elements
+                this.chatSection = document.getElementById('chatSection');
+                this.messagesContainer = document.getElementById('messages');
+                this.messageInput = document.getElementById('messageInput');
+                this.sendBtn = document.getElementById('sendBtn');
+                this.disconnectBtn = document.getElementById('disconnectBtn');
+                this.statusElement = document.getElementById('status');
+            }
+
+            bindEvents() {
+                this.connectBtn.addEventListener('click', () => this.connect());
+                this.sendBtn.addEventListener('click', () => this.sendMessage());
+                this.disconnectBtn.addEventListener('click', () => this.disconnect());
+                
+                this.messageInput.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') this.sendMessage();
+                });
+
+                this.usernameInput.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') this.tokenInput.focus();
+                });
+
+                this.tokenInput.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') this.connect();
+                });
+            }
+
+            async connect() {
+                const username = this.usernameInput.value.trim();
+                const token = this.tokenInput.value.trim();
+
+                if (!username || !token) {
+                    alert('Please enter both username and token');
+                    return;
+                }
+
+                this.username = username;
+                this.updateStatus('connecting', 'Connecting...');
+
+                try {
+                    // Create client instance
+                    this.client = DoggyHoleBrowserClient.create({
+                        url: 'ws://localhost:8080', // Change this to your server URL
+                        name: username,
+                        token: token,
+                        maxReconnectAttempts: 5,
+                        requestTimeout: 10000
+                    });
+
+                    // Set up event listeners
+                    this.setupClientEvents();
+
+                    // Connect to server
+                    await this.client.connect();
+
+                } catch (error) {
+                    console.error('Connection failed:', error);
+                    this.updateStatus('disconnected', 'Connection Failed');
+                    alert(`Connection failed: ${error.message}`);
+                }
+            }
+
+            setupClientEvents() {
+                // Connection events
+                this.client.addEventListener('connected', () => {
+                    console.log('Connected to server!');
+                    this.updateStatus('connected', 'Connected');
+                    this.showChatSection();
+                    this.addSystemMessage(`Welcome to the pack, ${this.username}! 🐺`);
+                });
+
+                this.client.addEventListener('disconnected', (event) => {
+                    console.log(`Disconnected: ${event.detail.code} - ${event.detail.reason}`);
+                    this.updateStatus('disconnected', 'Disconnected');
+                    this.showLoginSection();
+                    this.addSystemMessage(`Disconnected: ${event.detail.reason}`);
+                });
+
+                this.client.addEventListener('error', (event) => {
+                    console.error('Client error:', event.detail);
+                    this.addSystemMessage(`Error: ${event.detail.message || 'Connection error'}`);
+                });
+
+                this.client.addEventListener('stateChange', (event) => {
+                    console.log(`Connection state: ${event.detail.oldState} -> ${event.detail.newState}`);
+                    this.updateConnectionStatus(event.detail.newState);
+                });
+
+                // Chat events
+                this.client.on('chatMessage', (data) => {
+                    this.addMessage(data.fromClient, data.message, data.timestamp, false);
+                });
+
+                this.client.on('userJoined', (data) => {
+                    this.addSystemMessage(`${data.username} joined the chat 🎉`);
+                });
+
+                this.client.on('userLeft', (data) => {
+                    this.addSystemMessage(`${data.username} left the chat 👋`);
+                });
+
+                // Server shutdown notification
+                this.client.addEventListener('serverShutdown', (event) => {
+                    this.addSystemMessage(`Server is shutting down: ${event.detail.reason}. Grace period: ${event.detail.gracePeriod}ms`);
+                });
+            }
+
+            sendMessage() {
+                const message = this.messageInput.value.trim();
+                if (!message || !this.client || !this.client.isConnected()) return;
+
+                try {
+                    // Send chat message event
+                    this.client.sendEvent('chatMessage', {
+                        message: message,
+                        timestamp: Date.now()
+                    });
+
+                    // Add message to our own chat
+                    this.addMessage(this.username, message, Date.now(), true);
+                    this.messageInput.value = '';
+
+                } catch (error) {
+                    console.error('Failed to send message:', error);
+                    this.addSystemMessage(`Failed to send message: ${error.message}`);
+                }
+            }
+
+            disconnect() {
+                if (this.client) {
+                    this.client.disconnect();
+                    this.client = null;
+                }
+                this.showLoginSection();
+            }
+
+            addMessage(username, content, timestamp, isOwn = false) {
+                const messageElement = document.createElement('div');
+                messageElement.className = `message ${isOwn ? 'own' : 'other'}`;
+
+                const usernameElement = document.createElement('div');
+                usernameElement.className = 'username';
+                usernameElement.textContent = username;
+
+                const contentElement = document.createElement('div');
+                contentElement.className = 'content';
+                contentElement.textContent = content;
+
+                const timestampElement = document.createElement('div');
+                timestampElement.className = 'timestamp';
+                timestampElement.textContent = new Date(timestamp).toLocaleTimeString();
+
+                messageElement.appendChild(usernameElement);
+                messageElement.appendChild(contentElement);
+                messageElement.appendChild(timestampElement);
+
+                this.messagesContainer.appendChild(messageElement);
+                this.messagesContainer.scrollTop = this.messagesContainer.scrollHeight;
+            }
+
+            addSystemMessage(content) {
+                const messageElement = document.createElement('div');
+                messageElement.className = 'message system';
+                messageElement.textContent = content;
+
+                this.messagesContainer.appendChild(messageElement);
+                this.messagesContainer.scrollTop = this.messagesContainer.scrollHeight;
+            }
+
+            updateStatus(status, text) {
+                this.statusElement.textContent = text;
+                this.statusElement.className = `connection-status ${status}`;
+            }
+
+            updateConnectionStatus(state) {
+                const statusMap = {
+                    'connected': { status: 'connected', text: 'Connected' },
+                    'connecting': { status: 'connecting', text: 'Connecting...' },
+                    'reconnecting': { status: 'connecting', text: 'Reconnecting...' },
+                    'disconnected': { status: 'disconnected', text: 'Disconnected' },
+                    'disconnecting': { status: 'disconnected', text: 'Disconnecting...' }
+                };
+
+                const statusInfo = statusMap[state] || { status: 'disconnected', text: 'Unknown' };
+                this.updateStatus(statusInfo.status, statusInfo.text);
+            }
+
+            showChatSection() {
+                this.loginSection.style.display = 'none';
+                this.chatSection.style.display = 'flex';
+                this.messageInput.focus();
+            }
+
+            showLoginSection() {
+                this.loginSection.style.display = 'flex';
+                this.chatSection.style.display = 'none';
+                this.messagesContainer.innerHTML = '';
+            }
+        }
+
+        // Initialize the chat app when the page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            new ChatApp();
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DoggyHole Simple Example</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+        .connected { background: #d4edda; color: #155724; }
+        .disconnected { background: #f8d7da; color: #721c24; }
+        .connecting { background: #fff3cd; color: #856404; }
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            background: #007bff;
+            color: white;
+        }
+        button:hover { background: #0056b3; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        input {
+            padding: 8px;
+            margin: 5px;
+            border: 1px solid #ddd;
+            border-radius: 3px;
+            width: 200px;
+        }
+        .section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .log {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 3px;
+            font-family: monospace;
+            font-size: 0.9em;
+            max-height: 200px;
+            overflow-y: auto;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🐺 DoggyHole Simple Example</h1>
+        
+        <div class="section">
+            <h3>Connection</h3>
+            <div id="status" class="status disconnected">Disconnected</div>
+            
+            <div>
+                <input type="text" id="nameInput" placeholder="Client name" value="client1">
+                <input type="password" id="tokenInput" placeholder="Token" value="secret-token-1">
+                <input type="text" id="urlInput" placeholder="Server URL" value="ws://localhost:8080">
+            </div>
+            
+            <div>
+                <button id="connectBtn">Connect</button>
+                <button id="disconnectBtn" disabled>Disconnect</button>
+            </div>
+        </div>
+
+        <div class="section">
+            <h3>Server Requests</h3>
+            <div>
+                <input type="text" id="functionName" placeholder="Function name" value="greet">
+                <input type="text" id="requestData" placeholder="Data (JSON)" value='{"name": "World"}'>
+                <button id="sendRequestBtn" disabled>Send Request</button>
+            </div>
+            <div class="log" id="requestLog"></div>
+        </div>
+
+        <div class="section">
+            <h3>Client-to-Client Requests</h3>
+            <div>
+                <input type="text" id="targetClient" placeholder="Target client" value="client2">
+                <input type="text" id="clientFunction" placeholder="Function name" value="ping">
+                <input type="text" id="clientData" placeholder="Data (JSON)" value='{"message": "hello"}'>
+                <button id="sendClientRequestBtn" disabled>Send Client Request</button>
+            </div>
+            <div class="log" id="clientRequestLog"></div>
+        </div>
+
+        <div class="section">
+            <h3>Events</h3>
+            <div>
+                <input type="text" id="eventName" placeholder="Event name" value="testEvent">
+                <input type="text" id="eventData" placeholder="Data (JSON)" value='{"message": "Hello everyone!"}'>
+                <button id="sendEventBtn" disabled>Send Event</button>
+            </div>
+            <div class="log" id="eventLog"></div>
+        </div>
+
+        <div class="section">
+            <h3>Handlers</h3>
+            <div>
+                <button id="addHandlerBtn" disabled>Add Ping Handler</button>
+                <button id="removeHandlerBtn" disabled>Remove Ping Handler</button>
+            </div>
+            <div class="log" id="handlerLog"></div>
+        </div>
+    </div>
+
+    <script src="doggyhole-browser.js"></script>
+    <script>
+        class SimpleExample {
+            constructor() {
+                this.client = null;
+                this.initializeElements();
+                this.bindEvents();
+            }
+
+            initializeElements() {
+                // Connection elements
+                this.status = document.getElementById('status');
+                this.nameInput = document.getElementById('nameInput');
+                this.tokenInput = document.getElementById('tokenInput');
+                this.urlInput = document.getElementById('urlInput');
+                this.connectBtn = document.getElementById('connectBtn');
+                this.disconnectBtn = document.getElementById('disconnectBtn');
+
+                // Request elements
+                this.functionName = document.getElementById('functionName');
+                this.requestData = document.getElementById('requestData');
+                this.sendRequestBtn = document.getElementById('sendRequestBtn');
+                this.requestLog = document.getElementById('requestLog');
+
+                // Client request elements
+                this.targetClient = document.getElementById('targetClient');
+                this.clientFunction = document.getElementById('clientFunction');
+                this.clientData = document.getElementById('clientData');
+                this.sendClientRequestBtn = document.getElementById('sendClientRequestBtn');
+                this.clientRequestLog = document.getElementById('clientRequestLog');
+
+                // Event elements
+                this.eventName = document.getElementById('eventName');
+                this.eventData = document.getElementById('eventData');
+                this.sendEventBtn = document.getElementById('sendEventBtn');
+                this.eventLog = document.getElementById('eventLog');
+
+                // Handler elements
+                this.addHandlerBtn = document.getElementById('addHandlerBtn');
+                this.removeHandlerBtn = document.getElementById('removeHandlerBtn');
+                this.handlerLog = document.getElementById('handlerLog');
+            }
+
+            bindEvents() {
+                this.connectBtn.addEventListener('click', () => this.connect());
+                this.disconnectBtn.addEventListener('click', () => this.disconnect());
+                this.sendRequestBtn.addEventListener('click', () => this.sendRequest());
+                this.sendClientRequestBtn.addEventListener('click', () => this.sendClientRequest());
+                this.sendEventBtn.addEventListener('click', () => this.sendEvent());
+                this.addHandlerBtn.addEventListener('click', () => this.addHandler());
+                this.removeHandlerBtn.addEventListener('click', () => this.removeHandler());
+            }
+
+            async connect() {
+                const name = this.nameInput.value.trim();
+                const token = this.tokenInput.value.trim();
+                const url = this.urlInput.value.trim();
+
+                if (!name || !token || !url) {
+                    alert('Please fill in all connection fields');
+                    return;
+                }
+
+                try {
+                    this.updateStatus('connecting', 'Connecting...');
+                    this.setButtonsEnabled(false);
+
+                    this.client = DoggyHoleBrowserClient.create({
+                        url: url,
+                        name: name,
+                        token: token,
+                        maxReconnectAttempts: 3,
+                        requestTimeout: 5000
+                    });
+
+                    this.setupEventListeners();
+                    await this.client.connect();
+
+                } catch (error) {
+                    console.error('Connection failed:', error);
+                    this.updateStatus('disconnected', 'Connection Failed');
+                    this.setButtonsEnabled(false);
+                    alert(`Connection failed: ${error.message}`);
+                }
+            }
+
+            disconnect() {
+                if (this.client) {
+                    this.client.disconnect();
+                    this.client = null;
+                }
+            }
+
+            setupEventListeners() {
+                this.client.addEventListener('connected', () => {
+                    this.updateStatus('connected', 'Connected');
+                    this.setButtonsEnabled(true);
+                    this.log('requestLog', 'Connected to server successfully');
+                });
+
+                this.client.addEventListener('disconnected', (event) => {
+                    this.updateStatus('disconnected', 'Disconnected');
+                    this.setButtonsEnabled(false);
+                    this.log('requestLog', `Disconnected: ${event.detail.reason}`);
+                });
+
+                this.client.addEventListener('error', (event) => {
+                    this.log('requestLog', `Error: ${event.detail.message || 'Unknown error'}`);
+                });
+
+                // Listen for events from other clients
+                this.client.on('testEvent', (data) => {
+                    this.log('eventLog', `Received testEvent: ${JSON.stringify(data)}`);
+                });
+
+                // Listen for any event (catch-all)
+                this.client.on('*', (data, eventName) => {
+                    if (eventName !== 'testEvent') {
+                        this.log('eventLog', `Received ${eventName}: ${JSON.stringify(data)}`);
+                    }
+                });
+            }
+
+            async sendRequest() {
+                if (!this.client || !this.client.isConnected()) return;
+
+                try {
+                    const functionName = this.functionName.value.trim();
+                    const data = JSON.parse(this.requestData.value || '{}');
+
+                    this.log('requestLog', `Sending request: ${functionName}(${JSON.stringify(data)})`);
+                    
+                    const result = await this.client.request(functionName, data);
+                    this.log('requestLog', `Response: ${JSON.stringify(result)}`);
+
+                } catch (error) {
+                    this.log('requestLog', `Request failed: ${error.message}`);
+                }
+            }
+
+            async sendClientRequest() {
+                if (!this.client || !this.client.isConnected()) return;
+
+                try {
+                    const targetClient = this.targetClient.value.trim();
+                    const functionName = this.clientFunction.value.trim();
+                    const data = JSON.parse(this.clientData.value || '{}');
+
+                    this.log('clientRequestLog', `Sending to ${targetClient}: ${functionName}(${JSON.stringify(data)})`);
+                    
+                    const result = await this.client.requestClient(targetClient, functionName, data);
+                    this.log('clientRequestLog', `Response from ${targetClient}: ${JSON.stringify(result)}`);
+
+                } catch (error) {
+                    this.log('clientRequestLog', `Client request failed: ${error.message}`);
+                }
+            }
+
+            sendEvent() {
+                if (!this.client || !this.client.isConnected()) return;
+
+                try {
+                    const eventName = this.eventName.value.trim();
+                    const data = JSON.parse(this.eventData.value || '{}');
+
+                    this.log('eventLog', `Sending event: ${eventName} with data: ${JSON.stringify(data)}`);
+                    this.client.sendEvent(eventName, data);
+
+                } catch (error) {
+                    this.log('eventLog', `Failed to send event: ${error.message}`);
+                }
+            }
+
+            addHandler() {
+                if (!this.client) return;
+
+                this.client.addHandler('ping', (data) => {
+                    this.log('handlerLog', `Ping handler called with: ${JSON.stringify(data)}`);
+                    return {
+                        pong: true,
+                        timestamp: Date.now(),
+                        receivedData: data
+                    };
+                });
+
+                this.log('handlerLog', 'Added ping handler');
+            }
+
+            removeHandler() {
+                if (!this.client) return;
+
+                this.client.removeHandler('ping');
+                this.log('handlerLog', 'Removed ping handler');
+            }
+
+            updateStatus(statusClass, text) {
+                this.status.className = `status ${statusClass}`;
+                this.status.textContent = text;
+            }
+
+            setButtonsEnabled(connected) {
+                this.connectBtn.disabled = connected;
+                this.disconnectBtn.disabled = !connected;
+                this.sendRequestBtn.disabled = !connected;
+                this.sendClientRequestBtn.disabled = !connected;
+                this.sendEventBtn.disabled = !connected;
+                this.addHandlerBtn.disabled = !connected;
+                this.removeHandlerBtn.disabled = !connected;
+            }
+
+            log(logId, message) {
+                const logElement = document.getElementById(logId);
+                const timestamp = new Date().toLocaleTimeString();
+                const logEntry = document.createElement('div');
+                logEntry.innerHTML = `<span style="color: #666">[${timestamp}]</span> ${message}`;
+                logElement.appendChild(logEntry);
+                logElement.scrollTop = logElement.scrollHeight;
+
+                // Keep only last 50 entries
+                while (logElement.children.length > 50) {
+                    logElement.removeChild(logElement.firstChild);
+                }
+            }
+        }
+
+        // Initialize the example
+        document.addEventListener('DOMContentLoaded', () => {
+            new SimpleExample();
+        });
+    </script>
+</body>
+</html>

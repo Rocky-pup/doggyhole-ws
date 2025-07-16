@@ -25,6 +25,27 @@ A floofy, feature-rich WebSocket library for Node.js that makes real-time commun
 npm install doggyhole-ws
 ```
 
+## 🌐 Browser Usage
+
+For browser usage with native HTML + CSS + JavaScript (no bundlers required), check out the complete examples in the [`examples/browser`](./examples/browser) directory:
+
+- **Chat Application** - Real-time chat with multiple users
+- **Dashboard** - Live metrics and monitoring 
+- **Simple Example** - Basic API demonstration
+
+The browser examples include a standalone `doggyhole-browser.js` client that provides the same API as the Node.js version using native browser WebSocket and EventTarget APIs.
+
+**Quick Start:**
+```bash
+# Start the test server
+cd examples/browser
+node test-server.js
+
+# Open examples/browser/chat.html in your browser
+```
+
+See [`examples/browser/README.md`](./examples/browser/README.md) for detailed instructions.
+
 ## 🎯 Quick Start
 
 ### Server Setup
